@@ -1,7 +1,7 @@
-# SDKtools 1.0: substitua o ZIP e este workflow juntos; inicie uma NOVA execução.
+# SDKtools 2.0 US: substitua o ZIP e este workflow juntos; inicie uma NOVA execução.
 # O IPA original não faz parte dos fontes. Coloque-o em uma Release privada ou
 # configure um link HTTPS direto no secret SDKTOOLS_BASE_IPA_URL.
-name: Compilar SDKtools
+name: Compilar SDKtools US
 
 on:
   workflow_dispatch:
@@ -15,9 +15,9 @@ on:
           - release
           - secret_url
       release_tag:
-        description: Tag da Release que contém WePlay_6.12.0_base.ipa
+        description: Tag da Release que contém WePlay_US_6.6.2_base.ipa
         required: true
-        default: base-6.12.0
+        default: base-us-6.6.2
         type: string
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Conferir e abrir fontes SDKtools 1.0
+      - name: Conferir e abrir fontes SDKtools 2.0 US
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -49,7 +49,7 @@ jobs:
           source = Path('SDKtools_Fontes.zip')
           if not source.is_file() or source.is_symlink():
               raise SystemExit('Envie SDKtools_Fontes.zip para a raiz do repositório, sem extrair.')
-          if source.stat().st_size != int('63036') or hashlib.sha256(source.read_bytes()).hexdigest() != '1ca13ee45c4844e6ec161435dc049b85af787acdcf99e72279bd676f103d6374':
+          if source.stat().st_size != int('80918') or hashlib.sha256(source.read_bytes()).hexdigest() != '5692bfcc48ed2e99604e8378ef5ec4b55c5b75aca974dff26a74f515482b1675':
               raise SystemExit('ZIP e workflow não correspondem. Substitua os dois pelo par recebido.')
           destination = Path('_sdktools_build')
           destination.mkdir(exist_ok=False)
@@ -94,9 +94,9 @@ jobs:
         run: |
           set -euo pipefail
           gh release download \
-            --repo "$GH_REPO" --pattern 'WePlay_6.12.0_base.ipa' \
+            --repo "$GH_REPO" --pattern 'WePlay_US_6.6.2_base.ipa' \
             --dir _sdktools_input -- "$SDKTOOLS_RELEASE_TAG"
-          mv _sdktools_input/WePlay_6.12.0_base.ipa _sdktools_input/base.ipa
+          mv _sdktools_input/WePlay_US_6.6.2_base.ipa _sdktools_input/base.ipa
 
       - name: Baixar base por link HTTPS privado
         if: inputs.base_source == 'secret_url'
@@ -138,17 +138,17 @@ jobs:
           python3 scripts/integrate_ipa.py \
             --ipa ../../_sdktools_input/base.ipa \
             --framework dist/SDKtools.framework \
-            --output dist/WePlay_6.12.0_SDKtools_v1_unsigned.ipa 2>&1 | tee sdktools-package.log
-          shasum -a 256 dist/WePlay_6.12.0_SDKtools_v1_unsigned.ipa > dist/WePlay_6.12.0_SDKtools_v1_unsigned.ipa.sha256
+            --output dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.ipa 2>&1 | tee sdktools-package.log
+          shasum -a 256 dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.ipa > dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.ipa.sha256
 
       - name: Entregar IPA completo para assinatura
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v1-IPA
+          name: SDKtools-v2-US-IPA
           path: |
-            _sdktools_build/SDKtools/dist/WePlay_6.12.0_SDKtools_v1_unsigned.ipa
-            _sdktools_build/SDKtools/dist/WePlay_6.12.0_SDKtools_v1_unsigned.manifest.json
-            _sdktools_build/SDKtools/dist/WePlay_6.12.0_SDKtools_v1_unsigned.ipa.sha256
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.ipa
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.manifest.json
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v2_unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -157,7 +157,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v1-diagnostico-build
+          name: SDKtools-v2-US-diagnostico-build
           path: |
             _sdktools_build/SDKtools/sdktools-build.log
             _sdktools_build/SDKtools/sdktools-package.log
@@ -167,4 +167,4 @@ jobs:
 
       - name: Orientar download
         run: |
-          printf '%s\n' 'Baixe SDKtools-v1-IPA nos artefatos desta execução. Extraia o ZIP e importe o .ipa no GBox. Assine também os componentes incorporados. Instalação e captura ainda precisam ser confirmadas no iPhone.' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'Baixe SDKtools-v2-US-IPA nos artefatos desta execução. Extraia o ZIP e importe o .ipa no GBox. Assine também os componentes incorporados. Instalação e captura ainda precisam ser confirmadas no iPhone.' >> "$GITHUB_STEP_SUMMARY"
