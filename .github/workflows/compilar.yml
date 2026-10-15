@@ -1,4 +1,4 @@
-# SDKtools 3.5 US: substitua o ZIP e este workflow juntos; inicie uma NOVA execução.
+# SDKtools 3.5.1 US: substitua o ZIP e este workflow juntos; inicie uma NOVA execução.
 # O IPA original não faz parte dos fontes. Coloque-o em uma Release privada ou
 # configure um link HTTPS direto no secret SDKTOOLS_BASE_IPA_URL.
 name: Compilar SDKtools US
@@ -40,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Conferir e abrir fontes SDKtools 3.5 US
+      - name: Conferir e abrir fontes SDKtools 3.5.1 US
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -49,7 +49,7 @@ jobs:
           source = Path('SDKtools_Fontes.zip')
           if not source.is_file() or source.is_symlink():
               raise SystemExit('Envie SDKtools_Fontes.zip para a raiz do repositório, sem extrair.')
-          if source.stat().st_size != int('569939') or hashlib.sha256(source.read_bytes()).hexdigest() != 'da745e367f793a52468b71dccd75fa746d82329de72358d27c8788bc35456290':
+          if source.stat().st_size != int('582931') or hashlib.sha256(source.read_bytes()).hexdigest() != 'ba782155bbbce4d0464a6a572fb902745b80eb204d05fc0d6e2e205a63cf9ff5':
               raise SystemExit('ZIP e workflow não correspondem. Substitua os dois pelo par recebido.')
           destination = Path('_sdktools_build')
           destination.mkdir(exist_ok=False)
@@ -80,8 +80,8 @@ jobs:
                               raise SystemExit('Fonte truncado ou excessivo.')
                           writer.write(content)
           root = destination / 'SDKtools'
-          validation = json.loads((root / 'Validation/V3_5-validation.json').read_text())
-          if validation.get('toolVersion') != '3.5':
+          validation = json.loads((root / 'Validation/V3_5_1-validation.json').read_text())
+          if validation.get('toolVersion') != '3.5.1':
               raise SystemExit('Manifesto de outra versão.')
           for relative, expected in validation['sourceSHA256'].items():
               parts = relative.split('/')
@@ -149,17 +149,17 @@ jobs:
           python3 scripts/integrate_ipa.py \
             --ipa ../../_sdktools_input/base.ipa \
             --framework dist/SDKtools.framework \
-            --output dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.ipa 2>&1 | tee sdktools-package.log
-          shasum -a 256 dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.ipa > dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.ipa.sha256
+            --output dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.ipa 2>&1 | tee sdktools-package.log
+          shasum -a 256 dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.ipa > dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.ipa.sha256
 
       - name: Entregar IPA completo para assinatura
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.5-US-IPA
+          name: SDKtools-v3.5.1-US-IPA
           path: |
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.ipa
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.manifest.json
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_unsigned.ipa.sha256
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.ipa
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.manifest.json
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_5_1_unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -168,7 +168,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.5-US-diagnostico-build
+          name: SDKtools-v3.5.1-US-diagnostico-build
           path: |
             _sdktools_build/SDKtools/sdktools-build.log
             _sdktools_build/SDKtools/sdktools-package.log
@@ -178,4 +178,4 @@ jobs:
 
       - name: Orientar download
         run: |
-          printf '%s\n' 'Baixe SDKtools-v3.5-US-IPA nos artefatos desta execução. Extraia o ZIP e importe o .ipa no GBox. Assine também os componentes incorporados. Instalação e captura ainda precisam ser confirmadas no iPhone.' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'Baixe SDKtools-v3.5.1-US-IPA nos artefatos desta execução. Extraia o ZIP e importe o .ipa no GBox. Assine também os componentes incorporados. Instalação e captura ainda precisam ser confirmadas no iPhone.' >> "$GITHUB_STEP_SUMMARY"
