@@ -1,0 +1,897 @@
+--- a/Analysis/V3_17_1-cards.md
++++ b/Analysis/V3_17_1-cards.md
+@@ -0,0 +1,13 @@
++# V3.17.1 (build 34) — somente Cartas
++
++Base: SDKtools V3.17/build33. Bilhar e seus testes, Lua e runtime foram preservados byte a byte a pedido do operador. Não há revisão de física, frame, posições ou guia nesta atualização.
++
++- Reativação explícita de Cartas/gameType2007, sem downgrade do projeto.
++- Hooks de setup (void) e loadCurrentGame (BOOL) separados, retorno original preservado e restauração com encoding correto.
++- Menu de Cartas: captura desde a entrada, histórico ao vivo das cores recebidas, marcadores atuais e exportação do JS baixado.
++- Histórico nativo limitado a oito registros de skin_bg_complete com binding válido. Não revela cores desconhecidas nem associa por ID entre capturas.
++- Transporte mantido em 250 ms e limites preservados de 90 s / 512 amostras.
++- Booleano da cauda exportado como bool; analisador aceita somente o 0/1 legado desse campo específico.
++- Testes nativos exercitam os wrappers void/BOOL e o feed real; o renderer habilitado e o modo desativado são testados separadamente.
++
++No aparelho: no lobby, armar a captura de Cartas, entrar no jogo, aguardar 90 s e exportar o JSON. Os marcadores atuais são um modo separado do histórico de captura. A validação no aparelho ainda depende dessa nova captura.
+--- a/Resources/Info.plist
++++ b/Resources/Info.plist
+@@ -15,13 +15,13 @@
+ 	<key>CFBundlePackageType</key>
+ 	<string>FMWK</string>
+ 	<key>CFBundleShortVersionString</key>
+-	<string>3.17</string>
++	<string>3.17.1</string>
+ 	<key>CFBundleSupportedPlatforms</key>
+ 	<array>
+ 		<string>iPhoneOS</string>
+ 	</array>
+ 	<key>CFBundleVersion</key>
+-	<string>33</string>
++	<string>34</string>
+ 	<key>DTPlatformName</key>
+ 	<string>iphoneos</string>
+ 	<key>MinimumOSVersion</key>
+--- a/scripts/analyze_card_early.py
++++ b/scripts/analyze_card_early.py
+@@ -339,9 +339,12 @@
+     native_safe = {}
+     for key in ['hooksInstalled', 'hooksPrepared', 'scriptInstalled', 'helloReceived', 'loadCheckpoint', 'setupCheckpoint', 'pollingPreparation', 'finalDrainReceived', 'finalDrainConfirmed', 'undrainedTailMayBeLost']:
+         if key in native:
+-            if type(native[key]) is not bool:
++            value = native[key]
++            if key == 'undrainedTailMayBeLost' and type(value) is int and value in (0, 1):
++                value = bool(value)  # V3.12-3.17 serialized this C expression as NSNumber int.
++            if type(value) is not bool:
+                 fail('invalid_native_boolean')
+-            native_safe[key] = native[key]
++            native_safe[key] = value
+     native_gaps = []
+     for gap in bounded_list(native.get('gaps', []), 64):
+         if not isinstance(gap, str):
+--- a/scripts/build_framework.sh
++++ b/scripts/build_framework.sh
+@@ -29,6 +29,7 @@
+ bash scripts/test_card_investigation.sh
+ bash scripts/test_card_flow.sh
+ bash scripts/test_card_early.sh
++bash scripts/test_card_live.sh
+ bash scripts/test_card_disabled.sh
+ bash scripts/test_game_source_foundation.sh
+ framework="$build_workspace/SDKtools.framework"
+@@ -42,7 +43,7 @@
+   -Wall -Wextra -Werror=implicit-function-declaration \
+   -I Sources/SDKtools -install_name '@rpath/SDKtools.framework/SDKtools' \
+   -Wl,-rpath,@loader_path/Frameworks -Wl,-headerpad_max_install_names \
+-  -Wl,-no_adhoc_codesign -current_version 3.17 -compatibility_version 1.0.0 \
++  -Wl,-no_adhoc_codesign -current_version 3.17.1 -compatibility_version 1.0.0 \
+   -framework Foundation -framework CoreFoundation -framework UIKit -framework WebKit -framework ReplayKit \
+   -framework QuartzCore \
+   "${sources[@]}" -o "$framework/SDKtools"
+--- a/scripts/integrate_ipa.py
++++ b/scripts/integrate_ipa.py
+@@ -126,7 +126,7 @@
+     require('SDKtools' in files and 'Info.plist' in files, 'Framework incompleto.')
+     info = plistlib.loads(files['Info.plist'])
+     require(info.get('CFBundleExecutable') == 'SDKtools' and info.get('CFBundlePackageType') == 'FMWK' and info.get('CFBundleSupportedPlatforms') == ['iPhoneOS'] and info.get('MinimumOSVersion') == '15.0', 'Info.plist do framework incompatível.')
+-    require(info.get('CFBundleShortVersionString') == '3.17' and info.get('CFBundleVersion') == '33', 'Este pacote exige SDKtools 3.17, build 33. Framework de outra versão recusado.')
++    require(info.get('CFBundleShortVersionString') == '3.17.1' and info.get('CFBundleVersion') == '34', 'Este pacote exige SDKtools 3.17.1, build 34. Framework de outra versão recusado.')
+     for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua'):
+         candidates = [name for name in (resource, 'Resources/' + resource) if name in files]
+         require(len(candidates) == 1 and 0 < len(files[candidates[0]]) <= 65536,
+--- a/scripts/test_card_disabled.sh
++++ b/scripts/test_card_disabled.sh
+@@ -5,7 +5,7 @@
+ test_workspace="$(mktemp -d "${TMPDIR:-/tmp}/sdktools-card-disabled-test.XXXXXX")"
+ trap 'rm -rf "$test_workspace"' EXIT
+ cd "$project_root"
+-xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
++xcrun --sdk macosx clang -DST_CARD_GAME_FEATURE_ENABLED=0 -fobjc-arc -fmodules -Wall -Wextra \
+   -framework Foundation Tests/card_early_disabled_test.m Sources/SDKtools/STCardEarlyCapture.m \
+   -o "$test_workspace/card-early-disabled-test"
+ "$test_workspace/card-early-disabled-test"
+--- a/scripts/test_card_hints_bridge.sh
++++ b/scripts/test_card_hints_bridge.sh
+@@ -5,11 +5,11 @@
+ test_workspace="$(mktemp -d "${TMPDIR:-/tmp}/sdktools-card-hints-test.XXXXXX")"
+ trap 'rm -rf "$test_workspace"' EXIT
+ cd "$project_root"
+-xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
++xcrun --sdk macosx clang -DST_CARD_GAME_FEATURE_ENABLED=0 -fobjc-arc -fmodules -Wall -Wextra \
+   -framework Foundation -framework CoreFoundation \
+   Tests/card_hints_bridge_test.m -o "$test_workspace/card-hints-bridge-test"
+ "$test_workspace/card-hints-bridge-test"
+-xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
++xcrun --sdk macosx clang -DST_CARD_GAME_FEATURE_ENABLED=0 -fobjc-arc -fmodules -Wall -Wextra \
+   -framework Foundation \
+   Tests/card_root_command_test.m -o "$test_workspace/card-root-command-test"
+ "$test_workspace/card-root-command-test"
+--- a/scripts/test_card_live.sh
++++ b/scripts/test_card_live.sh
+@@ -0,0 +1,13 @@
++#!/bin/bash
++set -euo pipefail
++[[ "$(uname -s)" == Darwin ]] || exit 1
++project_root="$(cd "$(dirname "$0")/.." && pwd)"
++test_workspace="$(mktemp -d "${TMPDIR:-/tmp}/sdktools-card-live.XXXXXX")"
++trap 'rm -rf "$test_workspace"' EXIT
++cd "$project_root"
++xcrun --sdk macosx clang -fobjc-arc -fblocks -fmodules -Wall -Wextra \
++  -framework Foundation -framework CoreFoundation Tests/card_live_test.m Sources/SDKtools/STCardColorFeed.m -o "$test_workspace/card-live"
++"$test_workspace/card-live"
++xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
++  -framework Foundation -framework CoreFoundation Tests/card_hints_enabled_test.m -o "$test_workspace/card-hints-enabled"
++"$test_workspace/card-hints-enabled"
+--- a/Sources/SDKtools/STCardColorFeed.h
++++ b/Sources/SDKtools/STCardColorFeed.h
+@@ -0,0 +1,10 @@
++#import <Foundation/Foundation.h>
++NS_ASSUME_NONNULL_BEGIN
++/// Bounded observation history, NOT a map of current/hidden card identities.
++@interface STCardColorFeed : NSObject
++- (void)reset;
++- (void)consumeEvents:(NSArray *)events;
++- (NSDictionary *)snapshot;
++- (NSString *)statusText;
++@end
++NS_ASSUME_NONNULL_END
+--- a/Sources/SDKtools/STCardColorFeed.m
++++ b/Sources/SDKtools/STCardColorFeed.m
+@@ -0,0 +1,64 @@
++#import "STCardColorFeed.h"
++#import <CoreFoundation/CoreFoundation.h>
++#include <math.h>
++
++static BOOL STCFInt(id value, NSUInteger low, NSUInteger high) {
++    if (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value)==CFBooleanGetTypeID()) return NO;
++    double d=[value doubleValue];
++    return isfinite(d) && d>=low && d<=high && floor(d)==d;
++}
++@interface STCardColorFeed ()
++@property (nonatomic) NSUInteger lastSequence;
++@property (nonatomic) NSUInteger accepted;
++@property (nonatomic) NSUInteger rejected;
++@property (nonatomic, strong) NSMutableArray<NSNumber *> *counts;
++@property (nonatomic, strong) NSMutableArray<NSDictionary *> *recent;
++@end
++@implementation STCardColorFeed
++- (instancetype)init { if ((self=[super init])) [self reset]; return self; }
++- (void)reset {
++    self.lastSequence=self.accepted=self.rejected=0;
++    self.counts=[@[@0,@0,@0,@0,@0] mutableCopy]; self.recent=[NSMutableArray array];
++}
++- (void)consumeEvents:(NSArray *)events {
++    if (![events isKindOfClass:NSArray.class] || events.count>96) return;
++    for (id event in events) {
++        if (![event isKindOfClass:NSDictionary.class] || !STCFInt(event[@"sequence"],1,4096)) continue;
++        NSUInteger sequence=[event[@"sequence"] unsignedIntegerValue];
++        if (sequence<=self.lastSequence) continue;
++        self.lastSequence=sequence;
++        if (![event[@"stage"] isEqual:@"skin_bg_complete"]) continue;
++        id valid=event[@"bindingValid"];
++        if (![valid isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)valid)!=CFBooleanGetTypeID() || ![valid boolValue]) { self.rejected++; continue; }
++        NSArray *cards=event[@"cards"];
++        if (![cards isKindOfClass:NSArray.class] || cards.count!=1) { self.rejected++; continue; }
++        NSDictionary *card=cards.firstObject;
++        if (![card isKindOfClass:NSDictionary.class] || !STCFInt(card[@"id"],1,65535) ||
++            !STCFInt(card[@"type"],1,10) || !STCFInt(card[@"color"],0,4)) { self.rejected++; continue; }
++        NSUInteger type=[card[@"type"] unsignedIntegerValue], color=[card[@"color"] unsignedIntegerValue];
++        BOOL special=type==4 || type==6 || type==10;
++        if (!(special?[card[@"colorState"] isEqual:@"special"]:([card[@"colorState"] isEqual:@"known"] && color>0))) { self.rejected++; continue; }
++        NSUInteger bucket=special?0:color;
++        self.counts[bucket]=@([self.counts[bucket] unsignedIntegerValue]+1); self.accepted++;
++        NSMutableDictionary *row=[@{@"sequence":@(sequence),@"id":card[@"id"],@"type":@(type),@"color":@(color),@"special":special?@YES:@NO} mutableCopy];
++        // Only fixed numeric fields cross this independent view-model boundary.
++        for (NSString *key in @[@"elapsedMs",@"connectionGeneration",@"round",@"bindingGeneration"])
++            if (STCFInt(event[key],0,1000000000)) row[key]=event[key];
++        [self.recent addObject:[row copy]];
++        if (self.recent.count>8) [self.recent removeObjectAtIndex:0];
++    }
++}
++- (NSDictionary *)snapshot {
++    return @{@"version":@1,@"meaning":@"render_observation_history_not_current_hidden_state",
++        @"observations":@(self.accepted),@"rejected":@(self.rejected),
++        @"byColor":[self.counts copy],@"recent":[self.recent copy]};
++}
++- (NSString *)statusText {
++    if (!self.accepted) return @"Aguardando cores confirmadas nos eventos de renderização.";
++    NSDictionary *last=self.recent.lastObject;
++    NSArray *names=@[@"especial",@"vermelho",@"azul",@"amarelo",@"verde"];
++    NSUInteger bucket=[last[@"special"] boolValue]?0:[last[@"color"] unsignedIntegerValue];
++    return [NSString stringWithFormat:@"%lu observações · última carta %@: %@\nHistórico recebido; não revela cartas desconhecidas.",
++        (unsigned long)self.accepted,last[@"id"],names[bucket]];
++}
++@end
+--- a/Sources/SDKtools/STCardEarlyCapture.h
++++ b/Sources/SDKtools/STCardEarlyCapture.h
+@@ -3,13 +3,13 @@
+ NS_ASSUME_NONNULL_BEGIN
+ /// Card-only diagnostic, armed BEFORE entering game 2007. No evaluateJavaScript.
+ /// All API calls are main-thread only. A stopped report remains exportable.
+-/// V3.13 keeps the API for source compatibility but compiles an inert
+-/// implementation: arm returns NO; no observer, timer or hook is installed.
++/// V3.17.1 restores the reviewed typed lifecycle hooks; build-time opt-out remains.
+ @interface STCardEarlyCapture : NSObject
+ + (instancetype)shared;
+ @property (nonatomic, readonly) BOOL active;
+ @property (nonatomic, readonly) BOOL requested;
+ @property (nonatomic, copy, readonly) NSString *statusText;
++@property (nonatomic, copy, readonly) NSString *colorStatusText;
+ - (BOOL)arm;
+ - (void)stopWithReason:(NSString *)reason;
+ - (NSDictionary *)snapshotReport;
+--- a/Sources/SDKtools/STCardEarlyCapture.m
++++ b/Sources/SDKtools/STCardEarlyCapture.m
+@@ -14,6 +14,7 @@
+ - (BOOL)active { return NO; }
+ - (BOOL)requested { return NO; }
+ - (NSString *)statusText { return @"Cartas desativado nesta versão."; }
++- (NSString *)colorStatusText { return @"Cartas desativado."; }
+ - (BOOL)arm { return NO; }
+ - (void)stopWithReason:(NSString *)reason { (void)reason; }
+ - (NSDictionary *)snapshotReport {
+@@ -30,6 +31,8 @@
+ #import <objc/message.h>
+ #include <string.h>
+ #import "STCardEarlySanitizer.inc"
++#import "STCardLifecycle.h"
++#import "STCardColorFeed.h"
+ 
+ static const NSUInteger STEEventLimit = 4096;
+ static const NSUInteger STEReportLimit = 4 * 1024 * 1024;
+@@ -40,6 +43,7 @@
+ @property (nonatomic) SEL selector;
+ @property (nonatomic) IMP original;
+ @property (nonatomic) IMP wrapper;
++@property (nonatomic, copy) NSString *typeEncoding;
+ @property (nonatomic) BOOL installed;
+ @property (nonatomic) BOOL contested;
+ @end
+@@ -66,6 +70,7 @@
+ @property (nonatomic, strong) NSMutableArray<STEHook *> *hooks;
+ @property (nonatomic, strong) NSMutableArray *samples;
+ @property (nonatomic, strong) NSDictionary *latest;
++@property (nonatomic, strong) STCardColorFeed *colorFeed;
+ @property (nonatomic, strong) NSMutableSet<NSString *> *nativeGaps;
+ @property (nonatomic) NSTimeInterval armedAt;
+ @property (nonatomic) NSTimeInterval startedAt;
+@@ -112,7 +117,7 @@
+ }
+ - (instancetype)init {
+     if ((self = [super init])) {
+-        _hooks = [NSMutableArray array]; _samples = [NSMutableArray array];
++        _hooks = [NSMutableArray array]; _samples = [NSMutableArray array]; _colorFeed = [STCardColorFeed new];
+         _nativeGaps = [NSMutableSet set]; _state = @"idle"; _reason = @"not_requested";
+         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(backgrounded:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(backgrounded:) name:UIApplicationWillResignActiveNotification object:nil];
+@@ -120,6 +125,7 @@
+     return self;
+ }
+ - (void)backgrounded:(NSNotification *)notification { if (self.active) [self stopWithReason:@"application_inactive"]; }
++- (NSString *)colorStatusText { return [self.colorFeed statusText]; }
+ - (BOOL)supportedHost {
+     NSDictionary *config = [NSBundle bundleForClass:self.class].infoDictionary;
+     NSDictionary *map = @{@"CFBundleIdentifier":@"SDKToolsTargetBundleIdentifier", @"CFBundleShortVersionString":@"SDKToolsTargetVersion", @"CFBundleVersion":@"SDKToolsTargetBuild", @"CFBundleExecutable":@"SDKToolsTargetExecutable"};
+@@ -164,6 +170,7 @@
+     self.targetSelected = NO; self.documentID = nil; self.documentURL = nil;
+     self.receivedMessages = self.rejectedMessages = self.omittedEvents = self.sequenceGaps = 0;
+     self.lastSequence = self.eventCount = self.reportBytes = 0;
++    [self.colorFeed reset];
+     self.hooksPrepared = self.scriptInstalled = self.helloReceived = self.loadCheckpoint = self.setupCheckpoint = self.pollingPreparation = self.finalDrainReceived = NO;
+     self.token = [NSUUID.UUID.UUIDString stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString;
+     self.handlerName = [@"ste_" stringByAppendingString:[NSUUID.UUID.UUIDString stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString];
+@@ -212,7 +219,7 @@
+         SEL sel = NSSelectorFromString(name); STEHook *record = nil;
+         for (STEHook *h in self.hooks) if (h.target == cls && h.selector == sel) { record = h; break; }
+         Method method = class_getInstanceMethod(cls, sel); const char *types = method ? method_getTypeEncoding(method) : NULL;
+-        if (!types || strcmp(types, "v16@0:8") || method_getNumberOfArguments(method) != 2) { self.reason = @"lifecycle_abi_mismatch"; [self.nativeGaps addObject:@"lifecycle_abi_mismatch"]; continue; }
++        if (!STCardLifecycleMatches(sel, method)) { self.reason = @"lifecycle_abi_mismatch"; [self.nativeGaps addObject:@"lifecycle_abi_mismatch"]; continue; }
+         IMP current = method_getImplementation(method);
+         if (record) {
+             if (current == record.wrapper) { record.installed = YES; continue; }
+@@ -220,22 +227,14 @@
+             class_replaceMethod(cls, sel, record.wrapper, types); record.installed = YES; continue;
+         }
+         record = [STEHook new]; record.target = cls; record.selector = sel; record.original = current;
++        record.typeEncoding = [NSString stringWithUTF8String:types];
+         // Keep a single block/record per selector for the process lifetime. An
+         // external hook may retain our IMP; freeing it would be unsafe.
+-        __weak typeof(self) weakSelf = self; __weak STEHook *weakRecord = record;
+-        BOOL before = [name isEqual:@"loadCurrentGame"];
+-        IMP wrapper = imp_implementationWithBlock(^(id object) {
+-            STEHook *hook = weakRecord; IMP original = hook.original;
+-            if (before && NSThread.isMainThread) {
+-                @try { [weakSelf checkpoint:object beforeLoad:YES]; }
+-                @catch (__unused NSException *exception) { [weakSelf stopWithReason:@"native_checkpoint_error"]; }
+-            }
+-            // Exactly one call, with the original selector and original ABI.
+-            ((void (*)(id, SEL))original)(object, sel);
+-            if (!before && NSThread.isMainThread) {
+-                @try { [weakSelf checkpoint:object beforeLoad:NO]; }
+-                @catch (__unused NSException *exception) { [weakSelf stopWithReason:@"native_checkpoint_error"]; }
+-            }
++        __weak typeof(self) weakSelf = self;
++        IMP wrapper = STCardLifecycleWrapper(sel, current, ^(id object, BOOL before) {
++            if (!NSThread.isMainThread) return;
++            @try { [weakSelf checkpoint:object beforeLoad:before]; }
++            @catch (__unused NSException *exception) { [weakSelf stopWithReason:@"native_checkpoint_error"]; }
+         });
+         record.wrapper = wrapper; [self.hooks addObject:record];
+         // class_addMethod makes an inherited implementation local; never
+@@ -251,7 +250,7 @@
+     for (STEHook *hook in self.hooks) {
+         if (!hook.installed) continue;
+         Method method = class_getInstanceMethod(hook.target, hook.selector);
+-        if (method && method_getImplementation(method) == hook.wrapper) class_replaceMethod(hook.target, hook.selector, hook.original, "v16@0:8");
++        if (method && method_getImplementation(method) == hook.wrapper) class_replaceMethod(hook.target, hook.selector, hook.original, hook.typeEncoding.UTF8String);
+         else { hook.contested = YES; [self.nativeGaps addObject:@"lifecycle_restore_contested"]; }
+         hook.installed = NO;
+     }
+@@ -421,6 +420,7 @@
+         [self.nativeGaps addObject:@"native_report_limit"]; [self stopWithReason:@"native_report_limit"]; reply(@{@"active":@NO}, nil); return;
+     }
+     self.reportBytes += bytes.length; [self.samples addObject:sample];
++    [self.colorFeed consumeEvents:events];
+     if ([kind isEqual:@"end"]) { self.finalDrainReceived = YES; [self stopWithReason:safe[@"reason"]]; }
+     [self notifyChanged]; reply(@{@"active":@(self.active)}, nil);
+ }
+@@ -459,8 +459,8 @@
+     NSTimeInterval end = self.active ? STENow() : (self.stoppedAt ?: STENow());
+     BOOL hooksInstalled = self.hooks.count == 2; for (STEHook *h in self.hooks) hooksInstalled &= h.installed;
+     BOOL finalDrainConfirmed = self.finalDrainReceived && [self.latest[@"counters"][@"bytesQueued"] isEqual:@0] && [self.latest[@"counters"][@"dropped"] isEqual:@0] && !self.omittedEvents && !self.sequenceGaps;
+-    NSDictionary *native = @{@"hooksInstalled":@(hooksInstalled), @"hooksPrepared":@(self.hooksPrepared), @"scriptInstalled":@(self.scriptInstalled), @"helloReceived":@(self.helloReceived), @"loadCheckpoint":@(self.loadCheckpoint), @"setupCheckpoint":@(self.setupCheckpoint), @"pollingPreparation":@(self.pollingPreparation), @"receivedMessages":@(self.receivedMessages), @"rejectedMessages":@(self.rejectedMessages), @"nativeOmittedEvents":@(self.omittedEvents), @"sequenceGaps":@(self.sequenceGaps), @"events":@(self.eventCount), @"reportBytes":@(self.reportBytes), @"finalDrainReceived":@(self.finalDrainReceived), @"finalDrainConfirmed":@(finalDrainConfirmed), @"undrainedTailMayBeLost":@(self.helloReceived && !finalDrainConfirmed), @"gaps":[self.nativeGaps.allObjects sortedArrayUsingSelector:@selector(compare:)]};
+-    NSDictionary *report = @{@"version":@1, @"gameType":@2007, @"requested":@(self.requested), @"active":@(self.active), @"status":self.state ?: @"idle", @"reason":self.reason ?: @"not_requested", @"lastArmFailure":self.lastArmFailure ?: @"none", @"generation":@(self.generation), @"documentGeneration":@(self.helloReceived ? 1 : 0), @"durationLimitMs":@90000, @"armedWaitLimitMs":@120000, @"finalDrainGraceMs":@1500, @"armElapsedMs":@(self.armedAt ? (NSUInteger)MAX(0.0, (end - self.armedAt) * 1000) : 0), @"captureElapsedMs":@(self.startedAt ? (NSUInteger)MIN(90000.0, MAX(0.0, (end - self.startedAt) * 1000)) : 0), @"native":native, @"latest":self.latest ?: @{}, @"samples":[self.samples copy] ?: @[]};
++    NSDictionary *native = @{@"hooksInstalled":@(hooksInstalled), @"hooksPrepared":@(self.hooksPrepared), @"scriptInstalled":@(self.scriptInstalled), @"helloReceived":@(self.helloReceived), @"loadCheckpoint":@(self.loadCheckpoint), @"setupCheckpoint":@(self.setupCheckpoint), @"pollingPreparation":@(self.pollingPreparation), @"receivedMessages":@(self.receivedMessages), @"rejectedMessages":@(self.rejectedMessages), @"nativeOmittedEvents":@(self.omittedEvents), @"sequenceGaps":@(self.sequenceGaps), @"events":@(self.eventCount), @"reportBytes":@(self.reportBytes), @"finalDrainReceived":@(self.finalDrainReceived), @"finalDrainConfirmed":@(finalDrainConfirmed), @"undrainedTailMayBeLost":(self.helloReceived && !finalDrainConfirmed ? @YES : @NO), @"gaps":[self.nativeGaps.allObjects sortedArrayUsingSelector:@selector(compare:)]};
++    NSDictionary *report = @{@"version":@1, @"gameType":@2007, @"requested":@(self.requested), @"active":@(self.active), @"status":self.state ?: @"idle", @"reason":self.reason ?: @"not_requested", @"lastArmFailure":self.lastArmFailure ?: @"none", @"generation":@(self.generation), @"documentGeneration":@(self.helloReceived ? 1 : 0), @"durationLimitMs":@90000, @"armedWaitLimitMs":@120000, @"finalDrainGraceMs":@1500, @"armElapsedMs":@(self.armedAt ? (NSUInteger)MAX(0.0, (end - self.armedAt) * 1000) : 0), @"captureElapsedMs":@(self.startedAt ? (NSUInteger)MIN(90000.0, MAX(0.0, (end - self.startedAt) * 1000)) : 0), @"native":native, @"liveColors":[self.colorFeed snapshot], @"latest":self.latest ?: @{}, @"samples":[self.samples copy] ?: @[]};
+     // Build a detached JSON object so callers cannot mutate retained evidence.
+     NSData *data = STEBoundedJSON(report, STEReportLimit);
+     if (!data) return @{@"version":@1, @"gameType":@2007, @"requested":@(self.requested), @"status":@"error", @"reason":@"native_export_limit", @"generation":@(self.generation), @"documentGeneration":@(self.helloReceived ? 1 : 0), @"latest":@{}, @"native":native, @"samples":@[]};
+--- a/Sources/SDKtools/STCardFeaturePolicy.h
++++ b/Sources/SDKtools/STCardFeaturePolicy.h
+@@ -1,10 +1,12 @@
+ #ifndef SDKTOOLS_ST_CARD_FEATURE_POLICY_H
+ #define SDKTOOLS_ST_CARD_FEATURE_POLICY_H
+ 
+-// V3.13: Ah, minha carta (native gameType 2007) is paused by the owner.
++// V3.17.1: explicit owner-requested reactivation for native gameType 2007.
+ // This is a build policy, never a preference, exported flag or runtime toggle.
+ // Archived card sources remain for a later explicit reactivation/review.
+ // Alpaca/gameType 60 and generic game identification are independent of it.
+-#define ST_CARD_GAME_FEATURE_ENABLED 0
++#ifndef ST_CARD_GAME_FEATURE_ENABLED
++#define ST_CARD_GAME_FEATURE_ENABLED 1
++#endif
+ 
+ #endif
+--- a/Sources/SDKtools/STCardHintsRecorder.inc
++++ b/Sources/SDKtools/STCardHintsRecorder.inc
+@@ -64,7 +64,7 @@
+     }
+     if (self.cardHintsEnabled) return YES;
+     if (self.cardHintsBusy || self.autoplayBusy || self.returnActionBusy || self.sourceExportBusy ||
+-        self.isRecording || self.detectedGameDetectionActive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
++        self.isRecording || self.cardEarlyActive || self.detectedGameDetectionActive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
+     NSNumber *type = nil; UIViewController *controller = nil; NSString *reason = nil;
+     WKWebView *webView = STFindCaptureGame(&type, &controller, &reason);
+     if (!webView || ![type isEqual:@2007] || !webView.URL) {
+@@ -98,7 +98,7 @@
+ - (void)cardHintsTick {
+     if (!ST_CARD_GAME_FEATURE_ENABLED) return;
+     if (!self.cardHintsEnabled || self.cardHintsBusy) return;
+-    if (self.isRecording || self.detectedGameDetectionActive || self.sourceExportBusy || self.returnActionBusy || self.autoplayEnabled || self.xrayEnabled ||
++    if (self.isRecording || self.cardEarlyActive || self.detectedGameDetectionActive || self.sourceExportBusy || self.returnActionBusy || self.autoplayEnabled || self.xrayEnabled ||
+         UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { [self setCardHintsEnabled:NO]; return; }
+     NSNumber *type = nil; UIViewController *controller = nil; NSString *reason = nil;
+     WKWebView *webView = STFindCaptureGame(&type, &controller, &reason);
+--- a/Sources/SDKtools/STCardLifecycle.h
++++ b/Sources/SDKtools/STCardLifecycle.h
+@@ -0,0 +1,31 @@
++#ifndef SDKTOOLS_ST_CARD_LIFECYCLE_H
++#define SDKTOOLS_ST_CARD_LIFECYCLE_H
++#import <Foundation/Foundation.h>
++#import <objc/runtime.h>
++#include <string.h>
++
++// Audited WePlay US 6.6.2/132 contracts. Never erase the BOOL return ABI.
++static inline const char *STCardLifecycleEncoding(SEL selector) {
++    if (sel_isEqual(selector, NSSelectorFromString(@"setupWKWebView"))) return "v16@0:8";
++    if (sel_isEqual(selector, NSSelectorFromString(@"loadCurrentGame"))) return "B16@0:8";
++    return NULL;
++}
++static inline BOOL STCardLifecycleMatches(SEL selector, Method method) {
++    const char *expected=STCardLifecycleEncoding(selector);
++    return expected && method && method_getNumberOfArguments(method)==2 &&
++        method_getTypeEncoding(method) && strcmp(method_getTypeEncoding(method),expected)==0;
++}
++static inline IMP STCardLifecycleWrapper(SEL selector, IMP original, void (^checkpoint)(id, BOOL)) {
++    if (!original || !STCardLifecycleEncoding(selector)) return NULL;
++    if (sel_isEqual(selector, NSSelectorFromString(@"loadCurrentGame"))) {
++        return imp_implementationWithBlock(^BOOL(id object) {
++            if (checkpoint) checkpoint(object, YES);
++            return ((BOOL (*)(id,SEL))original)(object,selector);
++        });
++    }
++    return imp_implementationWithBlock(^(id object) {
++        ((void (*)(id,SEL))original)(object,selector);
++        if (checkpoint) checkpoint(object, NO);
++    });
++}
++#endif
+--- a/Sources/SDKtools/STOverlay.m
++++ b/Sources/SDKtools/STOverlay.m
+@@ -1,5 +1,6 @@
+ #import "STOverlay.h"
+ #import "STRecorder.h"
++#import "STCardEarlyCapture.h"
+ #import "STBilliardsRuntime.h"
+ #import <ReplayKit/ReplayKit.h>
+ #import <QuartzCore/QuartzCore.h>
+@@ -71,6 +72,8 @@
+ - (void)confirmPower;
+ - (void)performPowerSlot:(NSString *)slot command:(NSString *)command;
+ - (void)toggleAutoplay;
++- (void)traceCardEntry;
++- (void)toggleCardHints;
+ - (void)toggleBilliards;
+ - (void)exportBilliardsLive;
+ - (void)toggleXray;
+@@ -149,6 +152,11 @@
+ @property (nonatomic, strong) UIButton *billiardsResourceExportButton;
+ @property (nonatomic, strong) UIButton *billiardsTrainerButton;
+ @property (nonatomic, strong) UIButton *billiardsLiveExportButton;
++@property (nonatomic, strong) UIButton *cardEarlyButton;
++@property (nonatomic, strong) UIButton *cardHintsButton;
++@property (nonatomic, strong) UIButton *cardExportButton;
++@property (nonatomic, strong) UILabel *cardStatusLabel;
++@property (nonatomic, strong) UILabel *cardColorsLabel;
+ @property (nonatomic, strong) UILabel *billiardsStatusLabel;
+ @property (nonatomic) BOOL expanded;
+ @property (nonatomic) BOOL dataExpanded;
+@@ -257,7 +265,7 @@
+     heading.axis = UILayoutConstraintAxisVertical;
+     heading.spacing = 2;
+     [heading addArrangedSubview:[self label:@"SDKtools" size:23 weight:UIFontWeightBold color:UIColor.whiteColor]];
+-    [heading addArrangedSubview:[self label:@"V3.17 · Alpaca e Bilhar" size:11 weight:UIFontWeightMedium color:STOrange()]];
++    [heading addArrangedSubview:[self label:@"V3.17.1 · Alpaca, Bilhar e Cartas" size:11 weight:UIFontWeightMedium color:STOrange()]];
+     [header addArrangedSubview:heading];
+     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+     [close setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+@@ -357,6 +365,20 @@
+     self.billiardsLiveExportButton = [self button:@"Exportar leitura do bilhar" symbol:@"square.and.arrow.up" action:@selector(exportBilliardsLive) primary:NO];
+     self.billiardsLiveExportButton.accessibilityHint = @"Interrompe a leitura e compartilha o diagnóstico do bilhar.";
+     [stack addArrangedSubview:self.billiardsLiveExportButton];
++
++    [stack addArrangedSubview:[self label:@"Ah, minha carta" size:17 weight:UIFontWeightBold color:UIColor.whiteColor]];
++    self.cardEarlyButton=[self button:@"Capturar Cartas desde a entrada" symbol:@"record.circle" action:@selector(traceCardEntry) primary:YES];
++    [stack addArrangedSubview:self.cardEarlyButton];
++    self.cardStatusLabel=[self label:@"No lobby: arme a captura e entre no jogo. Limite de 90 s." size:11 weight:UIFontWeightRegular color:STMuted()];
++    [stack addArrangedSubview:self.cardStatusLabel];
++    self.cardColorsLabel=[self label:@"Cores recebidas aparecerão durante a captura." size:12 weight:UIFontWeightMedium color:STOrange()];
++    self.cardColorsLabel.numberOfLines=0;
++    [stack addArrangedSubview:self.cardColorsLabel];
++    self.cardHintsButton=[self button:@"Ativar marcadores de cores" symbol:@"circle.lefthalf.filled" action:@selector(toggleCardHints) primary:NO];
++    [stack addArrangedSubview:self.cardHintsButton];
++    self.cardExportButton=[self button:@"Exportar captura de Cartas" symbol:@"square.and.arrow.up" action:@selector(exportReport) primary:NO];
++    [stack addArrangedSubview:self.cardExportButton];
++    [stack addArrangedSubview:[self button:@"Exportar JS baixado do jogo" symbol:@"doc.text" action:@selector(exportGameSources) primary:NO]];
+ 
+     self.dataButton = [self button:@"Suporte" symbol:@"chevron.down" action:@selector(toggleData) primary:NO];
+     [self.dataButton removeTarget:self.owner action:@selector(toggleData) forControlEvents:UIControlEventTouchUpInside];
+@@ -542,15 +564,26 @@
+ - (void)refresh {
+     if (!self.isViewLoaded) return;
+     STRecorder *recorder = STRecorder.shared;
+-    BOOL recording = recorder.recording;
++    BOOL recording = recorder.recording || recorder.cardEarlyActive;
+     BOOL detecting = recorder.detectedGameDetectionActive;
+     BOOL sourceBusy = recorder.sourceExportBusy;
++    BOOL early=recorder.cardEarlyActive;
++    BOOL cardsBusy=recorder.cardHintsBusy;
++    BOOL cardsEnabled=recorder.cardHintsEnabled;
+     BOOL billiards = STBilliardsRuntime.shared.enabled;
+     BOOL transition = self.owner.videoState == STVideoStarting || self.owner.videoState == STVideoStopping;
+     BOOL presented = self.owner.pendingPreview || self.presentedViewController;
+     BOOL autoEnabled = recorder.autoplayEnabled, autoBusy = recorder.autoplayBusy;
+     BOOL idlePresentation = self.owner.videoState == STVideoIdle && !presented;
+     STSetLabelText(self.statusLabel, recorder.statusText ?: @"Diagnóstico parado");
++    self.cardEarlyButton.enabled=early || (!billiards && !recording && !detecting && !sourceBusy && !cardsBusy && !autoBusy && !recorder.returnActionBusy && idlePresentation);
++    STSetButtonTitle(self.cardEarlyButton,early?@"Parar captura de Cartas":@"Capturar Cartas desde a entrada");
++    self.cardHintsButton.enabled=cardsEnabled || (!billiards && !early && !recording && !detecting && !sourceBusy && !cardsBusy && !autoBusy && !recorder.returnActionBusy && idlePresentation);
++    STSetButtonTitle(self.cardHintsButton,cardsEnabled?@"Desativar marcadores de cores":@"Ativar marcadores de cores");
++    self.cardExportButton.enabled=recorder.cardEarlyRequested && !early && !recording && !sourceBusy && idlePresentation;
++    STSetLabelText(self.cardStatusLabel,early?recorder.cardEarlyStatusText:(cardsEnabled?recorder.cardHintsStatusText:recorder.cardEarlyStatusText));
++    STSetLabelText(self.cardColorsLabel,STCardEarlyCapture.shared.colorStatusText);
++
+     self.exportButton.enabled = !detecting && !sourceBusy && !recording && idlePresentation;
+     self.billiardsResourceExportButton.enabled = !detecting && !sourceBusy && !autoBusy && !recorder.returnActionBusy && idlePresentation;
+     BOOL billiardsExportBusy = sourceBusy && [recorder.billiardsResourceExportDiagnostic[@"status"] isEqual:@"collecting"];
+@@ -608,7 +641,7 @@
+     for (UIButton *button in @[self.exportButton, self.returnActionButton, self.leftPowerButton, self.rightPowerButton,
+         self.confirmPowerButton, self.autoplayButton, self.warehouseButton, self.diagnosticButton,
+         self.identifyGameButton, self.confirmGameButton, self.billiardsResourceExportButton,
+-        self.billiardsTrainerButton, self.billiardsLiveExportButton]) {
++        self.billiardsTrainerButton, self.billiardsLiveExportButton, self.cardEarlyButton, self.cardHintsButton, self.cardExportButton]) {
+         button.alpha = button.enabled ? 1 : 0.38;
+     }
+     NSString *notice = self.owner.noticeExpires > CACurrentMediaTime() ? self.owner.notice : @"";
+@@ -727,7 +760,7 @@
+     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; }); return; }
+     [self.controller refresh];
+     BOOL active = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+-    BOOL needed = active && (STBilliardsRuntime.shared.enabled || STRecorder.shared.detectedGameDetectionActive || STRecorder.shared.sourceExportBusy || (self.controller.expanded && (STRecorder.shared.recording || self.videoState != STVideoIdle || STRecorder.shared.autoplayEnabled || STRecorder.shared.autoplayBusy || STRecorder.shared.xrayEnabled)) || self.noticeExpires > CACurrentMediaTime());
++    BOOL needed = active && (STBilliardsRuntime.shared.enabled || STRecorder.shared.cardEarlyActive || STRecorder.shared.cardHintsEnabled || STRecorder.shared.detectedGameDetectionActive || STRecorder.shared.sourceExportBusy || (self.controller.expanded && (STRecorder.shared.recording || self.videoState != STVideoIdle || STRecorder.shared.autoplayEnabled || STRecorder.shared.autoplayBusy || STRecorder.shared.xrayEnabled)) || self.noticeExpires > CACurrentMediaTime());
+     if (needed && !self.statusTimer) {
+         __weak typeof(self) weakSelf = self;
+         self.statusTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
+@@ -797,6 +830,22 @@
+     }
+     [self showNotice:@"Rastreamento ativo. Use os poderes e o armazém no jogo. Depois pare a captura e exporte o JSON."];
+     if (self.controller.expanded) [self.controller togglePanel];
++}
++
++- (void)traceCardEntry {
++    STRecorder *recorder=STRecorder.shared;
++    if (recorder.cardEarlyActive) { [recorder stopCardEarlyCapture]; [self showNotice:@"Captura encerrada. Exporte o JSON de Cartas."]; return; }
++    if (STBilliardsRuntime.shared.enabled || self.videoState!=STVideoIdle || self.controller.presentedViewController) { [self showNotice:@"Finalize o bilhar, vídeo ou janela aberta antes de capturar Cartas."]; return; }
++    if (![recorder beginCardEarlyCapture]) { [self showNotice:recorder.cardEarlyStatusText]; return; }
++    [self showNotice:@"Captura armada. Entre em Ah, minha carta e jogue por 90 s."];
++    if (self.controller.expanded) [self.controller togglePanel];
++}
++- (void)toggleCardHints {
++    STRecorder *recorder=STRecorder.shared;
++    if (recorder.cardEarlyActive || STBilliardsRuntime.shared.enabled) { [self showNotice:@"Pare a captura ou o bilhar antes de ativar os marcadores."]; return; }
++    if (![recorder setCardHintsEnabled:!recorder.cardHintsEnabled]) [self showNotice:recorder.cardHintsStatusText];
++    else [self showNotice:recorder.cardHintsEnabled?@"Marcadores ativos. X cinza indica cor desconhecida.":@"Marcadores desativados."];
++    [self refresh];
+ }
+ 
+ - (void)toggleBilliards {
+@@ -962,6 +1011,8 @@
+ - (void)stopCapture { [self stopAllWithReason:@"user"]; }
+ 
+ - (void)stopAllWithReason:(NSString *)reason {
++    [STRecorder.shared stopCardEarlyCaptureWithReason:reason];
++    [STRecorder.shared setCardHintsEnabled:NO];
+     [STBilliardsRuntime.shared stopWithReason:reason];
+     if (STRecorder.shared.detectedGameDetectionActive) {
+         [STRecorder.shared cancelNewGameDetection];
+@@ -993,7 +1044,7 @@
+     [STBilliardsRuntime.shared stopWithReason:@"export"];
+     if (STRecorder.shared.sourceExportBusy) { [self showNotice:@"Aguarde a exportação terminar."]; return; }
+     if (self.pendingPreview) { [self showNotice:@"Salve ou feche a prévia do vídeo antes de exportar."]; [self presentPendingPreview]; return; }
+-    if (STRecorder.shared.recording || self.videoState != STVideoIdle) { [self showNotice:@"Pare a captura antes de exportar o relatório."]; return; }
++    if (STRecorder.shared.recording || STRecorder.shared.cardEarlyActive || self.videoState != STVideoIdle) { [self showNotice:@"Pare a captura antes de exportar o relatório."]; return; }
+     if (self.controller.presentedViewController) { [self showNotice:@"Feche a janela aberta antes de exportar."]; return; }
+     NSError *error = nil;
+     NSURL *url = [STRecorder.shared writeReportWithError:&error];
+--- a/Sources/SDKtools/STRecorder.m
++++ b/Sources/SDKtools/STRecorder.m
+@@ -1383,9 +1383,9 @@
+     }
+     NSTimeInterval duration = self.startedAt > 0 ? (self.isRecording ? STNow() : self.stoppedAt) - self.startedAt : 0;
+     NSDictionary *report = @{
+-        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.17",
++        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.17.1",
+         @"moduleAvailability": @{@"alpaca": @YES, @"cards": @(ST_CARD_GAME_FEATURE_ENABLED),
+-            @"cardsStatus": @"paused_by_owner", @"billiardsIdentified": @NO,
++            @"cardsStatus": ST_CARD_GAME_FEATURE_ENABLED ? @"available" : @"paused_by_owner", @"billiardsIdentified": @NO,
+             @"billiardsResourceExportAvailable": @YES, @"billiardsPredictionAvailable": @NO},
+         @"billiardsResourceExport": @{@"diagnostic": self.billiardsResourceExportDiagnostic,
+             @"explicitRequestOnly": @YES, @"cachedResourcesOnly": @YES, @"currentMatchIdentified": @NO,
+--- a/Tests/card_hints_enabled_test.m
++++ b/Tests/card_hints_enabled_test.m
+@@ -0,0 +1,220 @@
++#import "../Sources/SDKtools/STCardFeaturePolicy.h"
++// macOS/Foundation harness executing the exact production bridge and sanitizer.
++// Only UIKit/WebKit surfaces are replaced; physical completions stay manual.
++#import "../Sources/SDKtools/STCardHintsSanitizer.inc"
++#import <dispatch/dispatch.h>
++#include <stdio.h>
++
++typedef NS_ENUM(NSInteger, UIApplicationState) { UIApplicationStateActive, UIApplicationStateInactive };
++@interface UIApplication : NSObject
++@property UIApplicationState applicationState;
+++ (instancetype)sharedApplication;
++@end
++@implementation UIApplication
+++ (instancetype)sharedApplication { static UIApplication *app; static dispatch_once_t once; dispatch_once(&once, ^{ app = [UIApplication new]; }); return app; }
++@end
++
++@interface WKWebView : NSObject
++@property (nonatomic, strong) NSObject *window;
++@property (nonatomic) BOOL hidden;
++@property (nonatomic) double alpha;
++@property (nonatomic) BOOL throwsOnSubmission;
++@property (nonatomic) NSUInteger submissions;
++@property (nonatomic, copy) NSString *lastScript;
++@property (nonatomic, copy) void (^completion)(id, NSError *);
++- (void)evaluateJavaScript:(NSString *)script completionHandler:(void (^)(id, NSError *))completion;
++- (void)complete:(id)result error:(NSError *)error;
++@end
++@implementation WKWebView
++- (instancetype)init { if ((self = [super init])) { _window = [NSObject new]; _alpha = 1; } return self; }
++- (void)evaluateJavaScript:(NSString *)script completionHandler:(void (^)(id, NSError *))completion {
++    self.submissions++; self.lastScript = script;
++    if (self.throwsOnSubmission) @throw [NSException exceptionWithName:@"MockSubmission" reason:nil userInfo:nil];
++    self.completion = completion;
++}
++- (void)complete:(id)result error:(NSError *)error {
++    void (^callback)(id, NSError *) = self.completion; self.completion = nil;
++    if (callback) callback(result, error);
++}
++@end
++
++@interface STWPContext : NSObject
++@property (nonatomic, weak) WKWebView *webView;
++@property (nonatomic, copy) NSString *namespaceKey;
++@property (nonatomic, copy) NSString *contextID;
++@property (nonatomic, copy) NSString *webViewID;
++@property (nonatomic) NSUInteger visualSessionGeneration;
++@property (nonatomic) BOOL retireAfterCleanup;
++@end
++@implementation STWPContext
++@end
++
++@interface STWebProbe : NSObject
++@property BOOL inFlight;
++@property BOOL cleaning;
++@property BOOL acting;
++@property BOOL autoplayActing;
++@property BOOL cardHintsActing;
++@property NSUInteger requestSerial;
++@property (nonatomic, copy) NSString *cardHintsScript;
++@property (nonatomic, copy) NSString *cardRootScript;
++@property (nonatomic, strong) NSMutableArray *cleanupQueue;
++@property (nonatomic, strong) NSMutableArray *visualCleanupQueue;
++@property (nonatomic, strong) NSMutableArray<STWPContext *> *cardHintsCleanupQueue;
++@property (nonatomic, strong) NSMapTable<WKWebView *, STWPContext *> *cardHintsContexts;
++@property (nonatomic, strong) NSMutableDictionary *counters;
++- (void)count:(NSString *)key;
++- (void)drainCleanup;
++- (void)drainCardHintsCleanup;
++- (void)hideCardHints;
++- (BOOL)performCardHintsInWebView:(WKWebView *)webView sessionGeneration:(NSUInteger)sessionGeneration
++    validateContext:(BOOL (^)(void))validateContext update:(void (^)(NSDictionary<NSString *, id> *result))update;
++@end
++@implementation STWebProbe
++- (instancetype)init {
++    if ((self = [super init])) {
++        _cardRootScript = @"function(){return {};}";
++        _cardHintsScript = @"function(){return {tick:function(){},clear:function(){},owns:function(){}};}";
++        _cardHintsContexts = [NSMapTable weakToStrongObjectsMapTable];
++        _cardHintsCleanupQueue = [NSMutableArray array];
++        _cleanupQueue = [NSMutableArray array]; _visualCleanupQueue = [NSMutableArray array];
++        _counters = [NSMutableDictionary dictionary];
++    } return self;
++}
++- (void)count:(NSString *)key { self.counters[key] = @([self.counters[key] unsignedIntegerValue] + 1); }
++- (void)drainCleanup { if (!self.inFlight) [self drainCardHintsCleanup]; }
++#include "../Sources/SDKtools/STCardHintsBridge.inc"
++@end
++
++static NSUInteger checks, failures;
++static void Check(BOOL condition, NSString *message) {
++    checks++; if (!condition) { failures++; fprintf(stderr, "FAIL: %s\n", message.UTF8String); }
++}
++static NSMutableDictionary *Result(NSString *documentID) {
++    return [@{@"version": @1, @"status": @"ready", @"reason": @"hints_ready", @"shown": @3,
++        @"unknown": @2, @"unavailable": @1, @"runtimeDocumentID": documentID ?: @""} mutableCopy];
++}
++static NSString *Candidate(WKWebView *view) {
++    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"documentID:'([A-Fa-f0-9-]+)'" options:0 error:nil];
++    NSTextCheckingResult *match = [regex firstMatchInString:view.lastScript options:0 range:NSMakeRange(0, view.lastScript.length)];
++    return match ? [view.lastScript substringWithRange:[match rangeAtIndex:1]] : @"";
++}
++static void RunUntil(BOOL (^done)(void), NSTimeInterval seconds) {
++    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:seconds];
++    while (!done() && deadline.timeIntervalSinceNow > 0)
++        [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
++}
++int main(void) { @autoreleasepool {
++    NSMutableDictionary *data = Result(@"document");
++    data[@"privateFace"] = @"never-export"; data[@"physicalPending"] = @YES; data[@"readOnly"] = @NO;
++    NSDictionary *safe = STWPSanitizeCardHints(data);
++    Check([safe[@"shown"] isEqual:@3] && [safe[@"unknown"] isEqual:@2] && [safe[@"unavailable"] isEqual:@1], @"observed counts retained");
++    Check(!safe[@"privateFace"] && !safe[@"runtimeDocumentID"] && ![safe[@"physicalPending"] boolValue] && [safe[@"readOnly"] boolValue], @"page cannot export faces or own native lock");
++    for (NSString *key in @[@"shown", @"unknown", @"unavailable"]) {
++        for (id bad in @[@YES, @(-1), @0.25, @257, @(NAN), @(INFINITY), @"3", NSNull.null]) {
++            NSMutableDictionary *row = Result(nil); row[key] = bad;
++            Check([STWPSanitizeCardHints(row)[@"status"] isEqual:@"error"], @"invalid count rejected");
++        }
++        NSMutableDictionary *row = Result(nil); [row removeObjectForKey:key];
++        Check([STWPSanitizeCardHints(row)[@"status"] isEqual:@"error"], @"missing count rejected");
++    }
++    Check([safe[@"unknownShown"] isEqual:@0] && [safe[@"special"] isEqual:@0] && [safe[@"candidates"] isEqual:@0], @"old v1 results receive zero color extensions");
++    NSMutableDictionary *colors = Result(nil);
++    colors[@"unknownShown"] = @2; colors[@"special"] = @1; colors[@"candidates"] = @1;
++    Check([STWPSanitizeCardHints(colors)[@"unknownShown"] isEqual:@2], @"color extensions retained");
++    for (NSString *key in @[@"unknownShown", @"special", @"candidates"]) {
++        for (id bad in @[@YES, @(-1), @0.5, @257, @"1", NSNull.null]) {
++            NSMutableDictionary *row = [colors mutableCopy]; row[key] = bad;
++            Check([STWPSanitizeCardHints(row)[@"reason"] isEqual:@"invalid_result"], @"invalid color extension rejected");
++        }
++        NSMutableDictionary *row = [colors mutableCopy]; row[key] = @4;
++        Check([STWPSanitizeCardHints(row)[@"reason"] isEqual:@"invalid_result"], @"inconsistent color count rejected");
++    }
++    NSMutableDictionary *overflow = [colors mutableCopy]; overflow[@"shown"] = @256;
++    Check([STWPSanitizeCardHints(overflow)[@"reason"] isEqual:@"invalid_result"], @"total marker count bounded");
++    for (id invalid in @[@YES, @0, @2, @"1"]) {
++        NSMutableDictionary *row = Result(nil); row[@"version"] = invalid;
++        Check([STWPSanitizeCardHints(row)[@"reason"] isEqual:@"invalid_result"], @"version cannot be coerced");
++    }
++    data[@"reason"] = @"arbitrary-user-text";
++    Check([STWPSanitizeCardHints(data)[@"reason"] isEqual:@"unrecognized_reason"], @"reason allowlist enforced");
++    for (NSString *reason in @[@"hints_ready", @"hidden_faces_unknown", @"no_verified_cards", @"scene_unavailable",
++        @"unsupported_engine", @"hidden_document", @"layout_limited", @"read_budget", @"renderer_unavailable",
++        @"invalid_card_layout", @"stale_scene", @"lease_expired", @"document_changed", @"namespace_conflict"]) {
++        data[@"reason"] = reason;
++        Check([STWPSanitizeCardHints(data)[@"reason"] isEqual:reason], @"known bounded reason retained");
++    }
++
++    STWebProbe *probe = [STWebProbe new]; WKWebView *view = [WKWebView new];
++    STWebProbe *missingRoot = [STWebProbe new]; missingRoot.cardRootScript = nil;
++    __block NSDictionary *missingResult;
++    Check(![missingRoot performCardHintsInWebView:view sessionGeneration:1 validateContext:^BOOL { return YES; }
++        update:^(NSDictionary *r) { missingResult = r; }] && view.submissions == 0 &&
++        [missingResult[@"reason"] isEqual:@"renderer_script_missing"], @"missing root script cannot dispatch an incomplete injection");
++    NSMutableDictionary *rootResult = Result(nil);
++    rootResult[@"rootStatus"] = @"root_ready"; rootResult[@"rootBound"] = @3;
++    rootResult[@"rootKnown"] = @2; rootResult[@"rootUnknown"] = @1; rootResult[@"rootShown"] = @1; rootResult[@"rootUnbound"] = @0;
++    rootResult[@"rootReferences"] = @"PRIVATE";
++    NSDictionary *safeRoot = STWPSanitizeCardHints(rootResult);
++    Check([safeRoot[@"rootShown"] isEqual:@1] && !safeRoot[@"rootReferences"], @"only root counters cross native boundary");
++    rootResult[@"rootKnown"] = @4;
++    Check([STWPSanitizeCardHints(rootResult)[@"reason"] isEqual:@"invalid_result"], @"root totals must agree");
++    rootResult[@"rootKnown"] = @2; rootResult[@"rootShown"] = @3;
++    Check([STWPSanitizeCardHints(rootResult)[@"reason"] isEqual:@"invalid_result"], @"drawn root count cannot exceed verified root colors");
++    rootResult[@"rootShown"] = @YES;
++    Check([STWPSanitizeCardHints(rootResult)[@"reason"] isEqual:@"invalid_result"], @"root counter cannot be a coerced boolean");
++    NSMutableArray *updates = [NSMutableArray array];
++    BOOL (^valid)(void) = ^{ return YES; };
++    BOOL accepted = [probe performCardHintsInWebView:view sessionGeneration:1 validateContext:valid update:^(NSDictionary *r) { [updates addObject:r]; }];
++    Check(accepted && probe.inFlight && probe.cardHintsActing && view.submissions == 1, @"one physical request is held");
++    NSString *candidate = Candidate(view);
++    Check(candidate.length == 36, @"runtime document candidate is native UUID");
++    __block NSDictionary *blocked;
++    Check(![probe performCardHintsInWebView:view sessionGeneration:1 validateContext:valid update:^(NSDictionary *r) { blocked = r; }], @"second request rejected while pending");
++    Check([blocked[@"reason"] isEqual:@"physical_operation_pending"] && view.submissions == 1, @"rejection sends no second evaluation");
++    RunUntil(^BOOL(void) { return updates.count > 0; }, 3.0);
++    Check([updates.lastObject[@"reason"] isEqual:@"evaluation_timeout"] && [updates.lastObject[@"physicalPending"] boolValue] && probe.inFlight, @"timeout reports but does not unlock");
++    [probe hideCardHints];
++    Check(probe.cardHintsCleanupQueue.count == 1 && view.submissions == 1, @"clear is queued behind timed-out physical operation");
++    [view complete:Result(candidate) error:nil];
++    Check(updates.count == 2 && [updates.lastObject[@"afterTimeout"] boolValue] && ![updates.lastObject[@"physicalPending"] boolValue], @"late callback completes exactly once after timeout");
++    Check(probe.inFlight && probe.cleaning && view.submissions == 2 && [view.lastScript containsString:@"s.runtime.clear()"], @"cleanup starts only after original callback");
++    [view complete:@YES error:nil];
++    Check(!probe.inFlight && !probe.cleaning, @"cleanup callback releases the physical lock");
++    Check([[probe.cardHintsContexts objectForKey:view].contextID isEqual:candidate], @"clear preserves document identity");
++
++    __block BOOL contextValid = YES;
++    [probe performCardHintsInWebView:view sessionGeneration:1 validateContext:^{ return contextValid; } update:^(NSDictionary *r) { blocked = r; }];
++    Check([view.lastScript containsString:@"if(true)return fail('document_changed')"], @"reloaded document cannot silently create a fresh runtime");
++    contextValid = NO;
++    [view complete:Result(candidate) error:nil];
++    Check([blocked[@"reason"] isEqual:@"native_context_changed"] && [blocked[@"shown"] isEqual:@0], @"late result after context loss exposes no stale counts");
++    contextValid = YES;
++    [probe performCardHintsInWebView:view sessionGeneration:1 validateContext:valid update:^(NSDictionary *r) { blocked = r; }];
++    [view complete:Result(@"unissued-document") error:nil];
++    Check([blocked[@"reason"] isEqual:@"runtime_context_unverified"], @"foreign document result rejected");
++    [probe performCardHintsInWebView:view sessionGeneration:1 validateContext:valid update:^(NSDictionary *r) { blocked = r; }];
++    NSMutableDictionary *changed = Result(candidate); changed[@"status"] = @"blocked"; changed[@"reason"] = @"document_changed";
++    [view complete:changed error:nil];
++    Check([blocked[@"reason"] isEqual:@"document_changed"], @"document-loss marker remains distinguishable");
++
++    NSUInteger before = view.submissions;
++    Check(![probe performCardHintsInWebView:view sessionGeneration:2 validateContext:valid update:^(NSDictionary *r) { blocked = r; }], @"fresh activation clears the prior generation first");
++    Check(view.submissions == before + 1 && probe.cleaning && [blocked[@"reason"] isEqual:@"cleanup_pending"], @"generation cleanup is serialized");
++    [view complete:@YES error:nil];
++    [probe performCardHintsInWebView:view sessionGeneration:2 validateContext:valid update:^(NSDictionary *r) { blocked = r; }];
++    NSString *second = Candidate(view);
++    Check(![second isEqual:candidate], @"fresh explicit session gets independent document candidate");
++    [view complete:Result(second) error:nil];
++    Check([blocked[@"status"] isEqual:@"ready"], @"fresh activation can read after cleanup");
++
++    probe.inFlight = YES; probe.acting = YES; before = view.submissions;
++    Check(![probe performCardHintsInWebView:view sessionGeneration:2 validateContext:valid update:^(NSDictionary *r) { blocked = r; }], @"original action owns the same physical lock");
++    Check(view.submissions == before, @"hints never overlap an original game action");
++    probe.inFlight = NO; probe.acting = NO;
++    view.throwsOnSubmission = YES;
++    [probe hideCardHints];
++    Check(probe.inFlight && probe.cleaning, @"throwing cleanup does not invent cancellation acknowledgment");
++    printf("Card hints bridge: %lu checks, %lu failures\n", (unsigned long)checks, (unsigned long)failures);
++    return failures ? 1 : 0;
++} }
+--- a/Tests/card_live_test.m
++++ b/Tests/card_live_test.m
+@@ -0,0 +1,44 @@
++#import <Foundation/Foundation.h>
++#import <CoreFoundation/CoreFoundation.h>
++#import "../Sources/SDKtools/STCardLifecycle.h"
++#import "../Sources/SDKtools/STCardColorFeed.h"
++#include <stdio.h>
++static NSUInteger checks,failures,calls,phase;
++static BOOL answer;
++static id receiver;
++static SEL selectorSeen;
++static void Check(BOOL ok, NSString *label) { checks++; if (!ok) { failures++; fprintf(stderr,"FAIL %s\n",label.UTF8String); } }
++static BOOL Load(id self,SEL cmd) { calls++; receiver=self; selectorSeen=cmd; Check(phase==1,@"checkpoint before BOOL original"); phase=2; return answer; }
++static void Setup(id self,SEL cmd) { calls++; receiver=self; selectorSeen=cmd; Check(phase==0,@"void original before checkpoint"); phase=2; }
++int main(void) { @autoreleasepool {
++    id object=[NSObject new]; SEL load=NSSelectorFromString(@"loadCurrentGame"), setup=NSSelectorFromString(@"setupWKWebView");
++    IMP lb=STCardLifecycleWrapper(load,(IMP)Load,^(id o,BOOL before){Check(o==object && before,@"BOOL checkpoint receives object");phase=1;});
++    IMP vb=STCardLifecycleWrapper(setup,(IMP)Setup,^(id o,BOOL before){Check(o==object && !before && phase==2,@"void checkpoint follows original");phase=3;});
++    for (NSUInteger i=0;i<2;i++) { answer=i!=0; phase=0; NSUInteger prior=calls;
++        BOOL actual=((BOOL(*)(id,SEL))lb)(object,load);
++        Check(actual==answer && calls==prior+1 && receiver==object && sel_isEqual(selectorSeen,load),@"BOOL preserved, correct self/selector, exactly one call");
++    }
++    phase=0;NSUInteger prior=calls;((void(*)(id,SEL))vb)(object,setup);
++    Check(calls==prior+1 && phase==3 && sel_isEqual(selectorSeen,setup),@"void wrapper forwards exactly once");
++    Check(strcmp(STCardLifecycleEncoding(load),"B16@0:8")==0 && strcmp(STCardLifecycleEncoding(setup),"v16@0:8")==0,@"selector-specific encodings");
++    Check(STCardLifecycleWrapper(NSSelectorFromString(@"unreviewed"),(IMP)Load,nil)==NULL,@"unknown selector rejected");
++    imp_removeBlock(lb);imp_removeBlock(vb);
++    STCardColorFeed *feed=[STCardColorFeed new];
++    NSMutableDictionary *card=[@{@"id":@7,@"type":@1,@"color":@3,@"colorState":@"known",@"private":@"SECRET"} mutableCopy];
++    NSMutableDictionary *e=[@{@"sequence":@1,@"stage":@"skin_bg_complete",@"bindingValid":@YES,@"cards":@[card]} mutableCopy];
++    [feed consumeEvents:@[e]]; [feed consumeEvents:@[e]];
++    Check([feed.snapshot[@"observations"] isEqual:@1],@"duplicate event cannot increment feed");
++    e[@"sequence"]=@2;e[@"bindingValid"]=@NO;[feed consumeEvents:@[e]];
++    Check([feed.snapshot[@"rejected"] isEqual:@1],@"stale completion rejected");
++    e[@"sequence"]=@3;e[@"bindingValid"]=@YES;card[@"type"]=@0;card[@"colorState"]=@"candidate";[feed consumeEvents:@[e]];
++    Check([feed.snapshot[@"observations"] isEqual:@1],@"candidate never promoted");
++    e[@"sequence"]=@4;card[@"type"]=@6;card[@"color"]=@0;card[@"colorState"]=@"special";[feed consumeEvents:@[e]];
++    Check([feed.snapshot[@"byColor"][0] isEqual:@1],@"special zero retained");
++    for(NSUInteger i=5;i<30;i++){e[@"sequence"]=@(i);[feed consumeEvents:@[e]];}
++    Check([feed.snapshot[@"recent"] count]==8,@"history bounded");
++    NSData *data=[NSJSONSerialization dataWithJSONObject:feed.snapshot options:0 error:nil];
++    Check(![[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding] containsString:@"SECRET"],@"no arbitrary strings retained");
++    [feed reset];Check([feed.snapshot[@"observations"] isEqual:@0] && [feed.snapshot[@"recent"] count]==0,@"new capture clears history");
++    printf("Card typed hooks/feed: %lu checks, %lu failures\n",(unsigned long)checks,(unsigned long)failures);
++    return failures?1:0;
++} }
+--- a/Tests/test_card_disabled_build.py
++++ b/Tests/test_card_disabled_build.py
+@@ -27,7 +27,7 @@
+                 header.parent.mkdir(parents=True, exist_ok=True)
+                 header.write_text("", encoding="utf-8")
+             result = subprocess.run(
+-                [compiler, "-E", "-P", "-x", "c", "-I", str(headers), str(source)],
++                [compiler, "-DST_CARD_GAME_FEATURE_ENABLED=0", "-E", "-P", "-x", "c", "-I", str(headers), str(source)],
+                 capture_output=True, text=True, check=True,
+             )
+         compiled_branch = result.stdout
+--- a/Tests/test_card_early_analysis.py
++++ b/Tests/test_card_early_analysis.py
+@@ -251,6 +251,22 @@
+             self.assertNotIn('sensitive', result.stderr)
+             self.assertEqual(output.read_text(), 'preserve-me')
+ 
++    def test_legacy_numeric_native_tail_boolean_is_explicit_compatibility(self):
++        for value in [0, 1]:
++            data = capture()
++            data['cardEarly']['native']['undrainedTailMayBeLost'] = value
++            analysis.analyze(data)
++        for key, value in [('undrainedTailMayBeLost', 2), ('hooksInstalled', 1)]:
++            data = capture()
++            data['cardEarly']['native'][key] = value
++            with self.assertRaises(analysis.CaptureAnalysisError):
++                analysis.analyze(data)
++
++    def test_build_scripts_use_unix_line_endings(self):
++        for path in (SCRIPT.parent).glob('*.sh'):
++            with self.subTest(path=path.name):
++                self.assertNotIn(b'\r', path.read_bytes())
++
+ 
+ if __name__ == '__main__':
+     unittest.main()
+--- a/Tests/test_packaging.py
++++ b/Tests/test_packaging.py
+@@ -53,7 +53,7 @@
+     for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js'):
+         (framework/resource).write_text('(function(){return function(){return {};};}())')
+     (framework/'billiards_probe.lua').write_text('return "{}"')
+-    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'33','CFBundleShortVersionString':'3.17','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
++    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'34','CFBundleShortVersionString':'3.17.1','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
+     return ipa,framework,config
+ 
+ 
