@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validar e extrair o par de fontes V3.15
+      - name: Validar e extrair o par de fontes V3.15.1
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -56,10 +56,10 @@ jobs:
           import zipfile
 
           archive = Path("SDKtools_Fontes.zip")
-          expected_size = int("1342835")
-          expected_sha = "7785132170884c2cc23b75806807f5e5da114c5f359cd2c3d5e12b9c31b075b8"
+          expected_size = int("1365534")
+          expected_sha = "5c4a371f0dffddbc6819c4f51ccf584ecb20ec1b960104d0149e3b5bb48daaab"
           destination = Path("_sdktools_build")
-          manifest_name = "SDKtools/Validation/V3_15-validation.json"
+          manifest_name = "SDKtools/Validation/V3_15_1-validation.json"
           max_entries = 1024
           max_file = 4 * 1024 * 1024
           max_total = 32 * 1024 * 1024
@@ -101,7 +101,7 @@ jobs:
               require(re.fullmatch(r"[0-9a-f]{64}", expected_sha) is not None, "SHA-256 esperado inválido.")
               zipped = archive.read_bytes()
               require(len(zipped) == expected_size and hashlib.sha256(zipped).hexdigest() == expected_sha,
-                      "ZIP de fontes não corresponde ao workflow V3.15. Atualize ambos no mesmo commit.")
+                      "ZIP de fontes não corresponde ao workflow V3.15.1. Atualize ambos no mesmo commit.")
               require(not destination.exists() and not destination.is_symlink(), "Pasta de saída já existe.")
               members = {}
               folded = {}
@@ -148,9 +148,9 @@ jobs:
                           require(prior == prefix, "Colisão de maiúsculas entre pastas do ZIP.")
                           if end < len(parts):
                               require(prefix not in members or members[prefix], "Arquivo usado como pasta no ZIP.")
-              require(manifest_name in payloads, "Manifesto V3.15 ausente.")
+              require(manifest_name in payloads, "Manifesto V3.15.1 ausente.")
               manifest = json.loads(payloads[manifest_name].decode("utf-8"), object_pairs_hook=no_duplicate_keys)
-              require(isinstance(manifest, dict) and manifest.get("toolVersion") == "3.15", "Versão incorreta do manifesto.")
+              require(isinstance(manifest, dict) and manifest.get("toolVersion") == "3.15.1", "Versão incorreta do manifesto.")
               hashes = manifest.get("sourceSHA256")
               require(isinstance(hashes, dict) and hashes, "Mapa sourceSHA256 ausente.")
               expected_members = set()
@@ -175,7 +175,7 @@ jobs:
               require(not destination.exists() and not destination.is_symlink(), "Pasta de saída surgiu durante preflight.")
               temporary.rename(destination)
               temporary = None
-              print("V3.15: ZIP, caminhos, CRC e %d hashes de fontes verificados." % len(hashes))
+              print("V3.15.1: ZIP, caminhos, CRC e %d hashes de fontes verificados." % len(hashes))
           except (ValueError, OSError, UnicodeError, zipfile.BadZipFile, RuntimeError) as error:
               raise SystemExit("Preflight bloqueado: " + str(error))
           finally:
@@ -240,18 +240,18 @@ jobs:
         working-directory: _sdktools_build/SDKtools
         run: |
           set -euo pipefail
-          python3 scripts/integrate_ipa.py --ipa ../../_sdktools_input/base.ipa --framework dist/SDKtools.framework --output dist/WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa 2>&1 | tee sdktools-integration.log
+          python3 scripts/integrate_ipa.py --ipa ../../_sdktools_input/base.ipa --framework dist/SDKtools.framework --output dist/WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa 2>&1 | tee sdktools-integration.log
           cd dist
-          shasum -a 256 WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa > WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa.sha256
+          shasum -a 256 WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa > WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa.sha256
 
       - name: Guardar IPA sem assinatura
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.15-US-IPA
+          name: SDKtools-v3.15.1-US-IPA
           path: |
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_unsigned.manifest.json
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa.sha256
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.manifest.json
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa.sha256
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
@@ -271,7 +271,7 @@ jobs:
           from pathlib import Path
           import re
 
-          ipa = Path('WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa')
+          ipa = Path('WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa')
           manifest = ipa.with_suffix('.manifest.json')
           checksum = Path(ipa.name + '.sha256')
           for path in (ipa, manifest, checksum):
@@ -299,7 +299,7 @@ jobs:
               raise SystemExit('Identificação da execução de origem inválida.')
           repo = os.environ['GITHUB_REPOSITORY']
           notes = (
-              'IPA sem assinatura do SDKtools V3.15 US. Requer assinatura para instalar.\n\n'
+              'IPA sem assinatura do SDKtools V3.15.1 US. Requer assinatura para instalar.\n\n'
               f'Origem: https://github.com/{repo}/actions/runs/{source_run}\n\n'
               f'Commit da compilação: `{source_sha}`\n\n'
               f'SHA-256 do IPA: `{sha256}`\n\n'
@@ -309,14 +309,14 @@ jobs:
           Path('release-notes.md').write_text(notes, encoding='utf-8')
           print('IPA, manifesto e checksum conferidos antes da publicação.')
           PY
-          ipa='WePlay_US_6.6.2_SDKtools_v3_15_unsigned.ipa'
-          manifest='WePlay_US_6.6.2_SDKtools_v3_15_unsigned.manifest.json'
-          tag="sdktools-v3.15-us-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ipa='WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.ipa'
+          manifest='WePlay_US_6.6.2_SDKtools_v3_15_1_unsigned.manifest.json'
+          tag="sdktools-v3.15.1-us-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           # O CLI envia os anexos antes de publicar. Não substitui releases anteriores.
           gh release create "$tag" "$ipa" "$manifest" "$ipa.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SDKTOOLS_SOURCE_SHA" \
-            --title "SDKtools V3.15 US - execução ${SDKTOOLS_SOURCE_RUN}" \
+            --title "SDKtools V3.15.1 US - execução ${SDKTOOLS_SOURCE_RUN}" \
             --notes-file release-notes.md \
             --latest=false
           printf '## Download do IPA\n\n[Baixar o IPA](https://github.com/%s/releases/download/%s/%s)\n\n[Ver a Release](https://github.com/%s/releases/tag/%s)\n' \
@@ -326,11 +326,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.15-US-Diagnostico
+          name: SDKtools-v3.15.1-US-Diagnostico
           path: |
             _sdktools_build/SDKtools/sdktools-build.log
             _sdktools_build/SDKtools/sdktools-integration.log
-            _sdktools_build/SDKtools/Validation/V3_15-validation.json
+            _sdktools_build/SDKtools/Validation/V3_15_1-validation.json
             _sdktools_build/SDKtools/dist/SDKtools_unsigned.framework.zip
             _sdktools_build/SDKtools/dist/SDKtools.framework.dSYM.zip
           compression-level: 0
