@@ -56,8 +56,8 @@ jobs:
           import zipfile
 
           archive = Path("SDKtools_Fontes.zip")
-          expected_size = int("1455847")
-          expected_sha = "6311549dbab8f7d5d5443308bedddb79e5875cce9928bb703a3b791fa526a36a"
+          expected_size = int("1453906")
+          expected_sha = "41a5420bae024557338e57521148b6a2a63811b86c40100fd784f994748ea414"
           destination = Path("_sdktools_build")
           manifest_name = "SDKtools/Validation/V3_17_1-validation.json"
           max_entries = 1024

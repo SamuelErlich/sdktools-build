@@ -1,47 +1,19 @@
---- a/Analysis/V3_17_1-cards-and-acquisition.md
-+++ b/Analysis/V3_17_1-cards-and-acquisition.md
-@@ -0,0 +1,15 @@
-+# V3.17.1 (build 34), sobre V3.17/build33
+--- a/Analysis/V3_17_1-cards.md
++++ b/Analysis/V3_17_1-cards.md
+@@ -0,0 +1,13 @@
++# V3.17.1 (build 34) — somente Cartas
 +
-+- Reativação explícita de Cartas, preservando Alpaca e o resolvedor Lua do Bilhar da V3.17.
-+- Hooks de setup (void) e loadCurrentGame (BOOL) separados, com retorno e encoding de restauração preservados.
++Base: SDKtools V3.17/build33. Bilhar e seus testes, Lua e runtime foram preservados byte a byte a pedido do operador. Não há revisão de física, frame, posições ou guia nesta atualização.
++
++- Reativação explícita de Cartas/gameType2007, sem downgrade do projeto.
++- Hooks de setup (void) e loadCurrentGame (BOOL) separados, retorno original preservado e restauração com encoding correto.
 +- Menu de Cartas: captura desde a entrada, histórico ao vivo das cores recebidas, marcadores atuais e exportação do JS baixado.
-+- Histórico nativo limitado a oito registros de skin_bg_complete, com binding válido. Não revela cores desconhecidas nem associa por ID entre capturas.
-+- Transporte continua em 250 ms; mantidos limites de 90 s / 512 amostras.
++- Histórico nativo limitado a oito registros de skin_bg_complete com binding válido. Não revela cores desconhecidas nem associa por ID entre capturas.
++- Transporte mantido em 250 ms e limites preservados de 90 s / 512 amostras.
 +- Booleano da cauda exportado como bool; analisador aceita somente o 0/1 legado desse campo específico.
-+- Bilhar mantém package.loaded/descritores canônicos e ganha acquisition.frameFound e acquisition.positions/positionCount, separados da autorização de desenho.
-+- As posições só são copiadas após validação de geometria/projeção; podem estar disponíveis mesmo com movimento ou turno que bloqueie a previsão.
-+- O leitor do Bilhar não é o observador Cocos/JS de Cartas. São pipelines independentes (Unity/Lua e WKWebView/Cocos).
-+- Nenhuma nova captura do aparelho foi fornecida para a V3.17. A captura histórica V3.16 não prova que o resolvedor novo encontrou o frame.
-+- Pendência de layer19 das caçapas e física aproximada preservadas, fora da aquisição solicitada.
++- Testes nativos exercitam os wrappers void/BOOL e o feed real; o renderer habilitado e o modo desativado são testados separadamente.
 +
-+Validação local Windows: 491 testes Node aprovados; 86 testes Python, 84 aprovados e dois pulados por recursos de plataforma. Testes Foundation, Lua e build iPhoneOS são obrigatórios no workflow, sem removê-los ou aceitar mocks como compilação Apple.
---- a/Resources/billiards_probe.lua
-+++ b/Resources/billiards_probe.lua
-@@ -96,6 +96,7 @@
-     resourceGameId=20, gameType=1003, status="not_ready", sessionId=state.session,
-     scene=NULL, frameNumber=NULL, screen=NULL, cameraInstanceId=NULL,
-     balls=array(), cue=NULL, segments=array(),
-+    acquisition={schemaVersion=1,frameFound=false,positions=array()},
-     resolution={schemaVersion=1, source="none", contractStatus="missing",
-         enumType="nil", constType="nil", descriptorType="nil",
-         managerType="nil", managerGetType="nil", managerLookup="not_attempted",
-@@ -482,6 +483,7 @@
-         return stop("not_ready", okFrame and "frame_unavailable" or "frame_lookup_failed")
-     end
-     result.gates.hasFrame=true
-+    result.acquisition.frameFound=true
-     local camera = get(get(engine, "Camera"), "main")
-     local cameraID = instance(camera)
-     context(frame, sceneName, sceneHandle, cameraID)
-@@ -571,6 +573,7 @@
-                 end
-                 row.active, row.world, row.screen, row.speed, row.radiusPixels =
-                     true, pos, screenPos, length(vel), radiusPixels
-+                result.acquisition.positions[#result.acquisition.positions+1]={tag=tag,number=number,world={x=pos.x,y=pos.y,z=pos.z}}
-                 record.position, record.radius, record.colliderID, record.gameObjectID = pos,radius,cid,gid
-                 ballByGO[gid],ballByCollider[cid]=record,record
-                 observed = observed + 1
++No aparelho: no lobby, armar a captura de Cartas, entrar no jogo, aguardar 90 s e exportar o JSON. Os marcadores atuais são um modo separado do histórico de captura. A validação no aparelho ainda depende dessa nova captura.
 --- a/Resources/Info.plist
 +++ b/Resources/Info.plist
 @@ -15,13 +15,13 @@
@@ -107,26 +79,6 @@
      for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua'):
          candidates = [name for name in (resource, 'Resources/' + resource) if name in files]
          require(len(candidates) == 1 and 0 < len(files[candidates[0]]) <= 65536,
---- a/scripts/test_billiards_probe.py
-+++ b/scripts/test_billiards_probe.py
-@@ -545,6 +545,17 @@
-         self.assertEqual(unloaded["segments"], [])
-         self.assertNotIn("hasFrame", unloaded["gates"])
- 
-+    def test_acquisition_diagnostics_survive_prediction_gates(self):
-+        for case in ['loaded_modules', 'resolver_moving_gate']:
-+            with self.subTest(case=case):
-+                result = self.sample(case)
-+                self.assertTrue(result['acquisition']['frameFound'])
-+                self.assertEqual(len(result['acquisition']['positions']), 2)
-+                self.assertEqual(result['acquisition']['positions'][0]['tag'], 1)
-+        missing = self.sample('resolver_frame_destroyed')
-+        self.assertFalse(missing['acquisition']['frameFound'])
-+        self.assertEqual(missing['acquisition']['positions'], [])
-+
- 
- if __name__ == "__main__":
-     unittest.main(verbosity=2)
 --- a/scripts/test_card_disabled.sh
 +++ b/scripts/test_card_disabled.sh
 @@ -5,7 +5,7 @@
@@ -156,7 +108,7 @@
  "$test_workspace/card-root-command-test"
 --- a/scripts/test_card_live.sh
 +++ b/scripts/test_card_live.sh
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,13 @@
 +#!/bin/bash
 +set -euo pipefail
 +[[ "$(uname -s)" == Darwin ]] || exit 1
@@ -170,60 +122,6 @@
 +xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
 +  -framework Foundation -framework CoreFoundation Tests/card_hints_enabled_test.m -o "$test_workspace/card-hints-enabled"
 +"$test_workspace/card-hints-enabled"
-+xcrun --sdk macosx clang -fobjc-arc -fmodules -Wall -Wextra \
-+  -framework Foundation -framework CoreFoundation Tests/billiards_acquisition_test.m Sources/SDKtools/STBilliardsLiveSnapshot.m -o "$test_workspace/acquisition"
-+"$test_workspace/acquisition"
---- a/Sources/SDKtools/STBilliardsLiveSnapshot.m
-+++ b/Sources/SDKtools/STBilliardsLiveSnapshot.m
-@@ -204,6 +204,28 @@
- 
- /* The bridge is an untrusted producer for drawing purposes. Preserve only the
-  * explicit scalar schema; never serialize arbitrary objects returned by Lua. */
-+// Acquisition diagnostics never authorize prediction or drawing.
-+static NSDictionary *STBLAcquisition(id input) {
-+    if (![input isKindOfClass:NSDictionary.class] || !STBLBoolean(input[@"frameFound"])) return nil;
-+    int64_t schema;
-+    if (!STBLInteger(input[@"schemaVersion"],1,1,&schema)) return nil;
-+    NSArray *positions=input[@"positions"];
-+    if (![positions isKindOfClass:NSArray.class] || positions.count>16 ||
-+        (![input[@"frameFound"] boolValue] && positions.count)) return nil;
-+    NSMutableArray *safe=[NSMutableArray array]; uint32_t seen=0;
-+    for (id item in positions) {
-+        if (![item isKindOfClass:NSDictionary.class]) return nil;
-+        int64_t tag,number; double x,y,z;
-+        NSDictionary *world=item[@"world"];
-+        if (![world isKindOfClass:NSDictionary.class] || !STBLInteger(item[@"tag"],1,16,&tag) ||
-+            !STBLInteger(item[@"number"],0,15,&number) || !STBLValidIdentityBall(tag,number,&seen) ||
-+            !STBLNumber(world[@"x"],-20,20,&x) || !STBLNumber(world[@"y"],-.5,.5,&y) ||
-+            !STBLNumber(world[@"z"],-20,20,&z)) return nil;
-+        [safe addObject:@{@"tag":@(tag),@"number":@(number),@"world":@{@"x":@(x),@"y":@(y),@"z":@(z)}}];
-+    }
-+    return @{@"schemaVersion":@1,@"frameFound":input[@"frameFound"],@"positionCount":@(safe.count),@"positions":safe};
-+}
-+
- NSDictionary *STBilliardsSanitizeSnapshot(id raw, NSString **failure) {
-     if (failure) *failure=@"invalid_snapshot";
-     if (![raw isKindOfClass:NSDictionary.class]) return nil;
-@@ -217,6 +239,8 @@
-     NSMutableDictionary *result=[@{@"format":@"SDKtools.BilliardsLive",@"schemaVersion":@1,@"status":status,
-         @"reason":reason,@"balls":@[],@"segments":@[],
-         @"prediction":@{@"available":@NO,@"reason":reason,@"model":@"geometric",@"maxBounces":@3}} mutableCopy];
-+    NSDictionary *acquisition=STBLAcquisition(raw[@"acquisition"]);
-+    if (acquisition) result[@"acquisition"]=acquisition;
-     NSDictionary *environment=STBLEnvironment(raw[@"environment"]);
-     if (environment) result[@"environment"]=environment;
-     NSDictionary *resolution=STBLResolution(raw[@"resolution"]);
---- a/Sources/SDKtools/STBilliardsRuntime.m
-+++ b/Sources/SDKtools/STBilliardsRuntime.m
-@@ -326,7 +326,7 @@
-     if (!NSThread.isMainThread) { if(error)*error=STBLError(3,@"Exporte pelo menu do jogo."); return nil; }
-     [self stopWithReason:@"export"];
-     if (!self.lastSnapshot.count) { if(error)*error=STBLError(4,@"Ative o bilhar antes de exportar o diagnóstico."); return nil; }
--    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.17",
-+    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.17.1",
-         @"createdUTC":[NSISO8601DateFormatter.new stringFromDate:NSDate.date],@"lastSnapshot":self.lastSnapshot,
-         @"samples":[self.history copy],@"counts":@{@"attempts":@(self.attempts),@"accepted":@(self.accepted),@"rejected":@(self.rejected),
-             @"slowSamples":@(self.slowSamples),@"omittedOlderSamples":@(self.omitted)},@"stopReason":self.stopReason,
 --- a/Sources/SDKtools/STCardColorFeed.h
 +++ b/Sources/SDKtools/STCardColorFeed.h
 @@ -0,0 +1,10 @@
@@ -625,10 +523,12 @@
      if (needed && !self.statusTimer) {
          __weak typeof(self) weakSelf = self;
          self.statusTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf refresh]; }];
-@@ -799,7 +832,25 @@
+@@ -797,6 +830,22 @@
+     }
+     [self showNotice:@"Rastreamento ativo. Use os poderes e o armazém no jogo. Depois pare a captura e exporte o JSON."];
      if (self.controller.expanded) [self.controller togglePanel];
- }
- 
++}
++
 +- (void)traceCardEntry {
 +    STRecorder *recorder=STRecorder.shared;
 +    if (recorder.cardEarlyActive) { [recorder stopCardEarlyCapture]; [self showNotice:@"Captura encerrada. Exporte o JSON de Cartas."]; return; }
@@ -643,15 +543,10 @@
 +    if (![recorder setCardHintsEnabled:!recorder.cardHintsEnabled]) [self showNotice:recorder.cardHintsStatusText];
 +    else [self showNotice:recorder.cardHintsEnabled?@"Marcadores ativos. X cinza indica cor desconhecida.":@"Marcadores desativados."];
 +    [self refresh];
-+}
-+
+ }
+ 
  - (void)toggleBilliards {
-+    if (STRecorder.shared.cardEarlyActive) { [self showNotice:@"Pare a captura de Cartas antes do bilhar."]; return; }
-+    [STRecorder.shared setCardHintsEnabled:NO];
-     STBilliardsRuntime *runtime=STBilliardsRuntime.shared;
-     if (runtime.enabled) { [runtime stopWithReason:@"user"]; [self refresh]; return; }
-     if (self.videoState!=STVideoIdle || self.pendingPreview || self.controller.presentedViewController) {
-@@ -962,6 +1013,8 @@
+@@ -962,6 +1011,8 @@
  - (void)stopCapture { [self stopAllWithReason:@"user"]; }
  
  - (void)stopAllWithReason:(NSString *)reason {
@@ -660,7 +555,7 @@
      [STBilliardsRuntime.shared stopWithReason:reason];
      if (STRecorder.shared.detectedGameDetectionActive) {
          [STRecorder.shared cancelNewGameDetection];
-@@ -993,7 +1046,7 @@
+@@ -993,7 +1044,7 @@
      [STBilliardsRuntime.shared stopWithReason:@"export"];
      if (STRecorder.shared.sourceExportBusy) { [self showNotice:@"Aguarde a exportação terminar."]; return; }
      if (self.pendingPreview) { [self showNotice:@"Salve ou feche a prévia do vídeo antes de exportar."]; [self presentPendingPreview]; return; }
@@ -683,28 +578,6 @@
              @"billiardsResourceExportAvailable": @YES, @"billiardsPredictionAvailable": @NO},
          @"billiardsResourceExport": @{@"diagnostic": self.billiardsResourceExportDiagnostic,
              @"explicitRequestOnly": @YES, @"cachedResourcesOnly": @YES, @"currentMatchIdentified": @NO,
---- a/Tests/billiards_acquisition_test.m
-+++ b/Tests/billiards_acquisition_test.m
-@@ -0,0 +1,19 @@
-+#import "../Sources/SDKtools/STBilliardsLiveSnapshot.h"
-+#include <stdio.h>
-+static NSUInteger checks,failures;
-+static void Check(BOOL ok,NSString *why){checks++;if(!ok){failures++;fprintf(stderr,"FAIL %s\n",why.UTF8String);}}
-+int main(void){@autoreleasepool{
-+    NSMutableDictionary *point=[@{@"tag":@1,@"number":@0,@"world":@{@"x":@1,@"y":@0,@"z":@2}} mutableCopy];
-+    NSMutableDictionary *acq=[@{@"schemaVersion":@1,@"frameFound":@YES,@"positions":@[point],@"private":@"SECRET"} mutableCopy];
-+    NSMutableDictionary *raw=[@{@"format":@"SDKtools.BilliardsLive",@"schemaVersion":@1,@"status":@"not_ready",@"reason":@"not_local_turn",@"acquisition":acq,@"segments":@[@{}]} mutableCopy];
-+    NSDictionary *safe=STBilliardsSanitizeSnapshot(raw,NULL);
-+    Check([safe[@"acquisition"][@"positionCount"] isEqual:@1],@"position survives non-drawable report");
-+    Check(![safe[@"prediction"][@"available"] boolValue] && [safe[@"segments"] count]==0,@"diagnostic cannot authorize rendering");
-+    Check(!safe[@"acquisition"][@"private"],@"unknown field omitted");
-+    acq[@"positions"]=@[point,point];Check(!STBilliardsSanitizeSnapshot(raw,NULL)[@"acquisition"],@"duplicate identity invalidates diagnostic");
-+    acq[@"positions"]=@[point];point[@"world"]=@{@"x":@(NAN),@"y":@0,@"z":@2};Check(!STBilliardsSanitizeSnapshot(raw,NULL)[@"acquisition"],@"nonfinite position rejected");
-+    point[@"world"]=@{@"x":@1,@"y":@0,@"z":@2};acq[@"frameFound"]=@NO;
-+    Check(!STBilliardsSanitizeSnapshot(raw,NULL)[@"acquisition"],@"positions without frame rejected");
-+    acq[@"positions"]=@[];Check([STBilliardsSanitizeSnapshot(raw,NULL)[@"acquisition"][@"positionCount"] isEqual:@0],@"frame absence recorded explicitly");
-+    printf("Billiards acquisition: %lu checks, %lu failures\n",(unsigned long)checks,(unsigned long)failures);return failures?1:0;
-+}}
 --- a/Tests/card_hints_enabled_test.m
 +++ b/Tests/card_hints_enabled_test.m
 @@ -0,0 +1,220 @@
