@@ -1,24 +1,21 @@
-# SDKtools 3.12 US: substitua o ZIP e este workflow juntos; inicie uma NOVA execução.
-# O IPA original não faz parte dos fontes. Coloque-o em uma Release privada ou
-# configure um link HTTPS direto no secret SDKTOOLS_BASE_IPA_URL.
 name: Compilar SDKtools US
 
 on:
   workflow_dispatch:
     inputs:
       base_source:
-        description: Onde está o IPA base original
+        description: Origem do IPA base já existente
         required: true
-        default: release
         type: choice
+        default: release
         options:
           - release
           - secret_url
       release_tag:
-        description: Tag da Release que contém WePlay_US_6.6.2_base.ipa
+        description: Tag da Release com WePlay_US_6.6.2_base.ipa
         required: true
-        default: base-us-6.6.2
         type: string
+        default: base-us-6.6.2
 
 permissions:
   contents: read
@@ -35,68 +32,159 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Baixar fontes do repositório
+      - name: Obter arquivos do commit selecionado
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Conferir e abrir fontes SDKtools 3.12 US
+      - name: Validar e extrair o par de fontes V3.13
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          from pathlib import Path
-          import hashlib, json, stat, unicodedata, zipfile
-          source = Path('SDKtools_Fontes.zip')
-          if not source.is_file() or source.is_symlink():
-              raise SystemExit('Envie SDKtools_Fontes.zip para a raiz do repositório, sem extrair.')
-          if source.stat().st_size != int('792993') or hashlib.sha256(source.read_bytes()).hexdigest() != 'e9f5c826643a888e94880f0e96eeb1ffb0ed66f8116f9699fdf9b549a210ab5f':
-              raise SystemExit('ZIP e workflow não correspondem. Substitua os dois pelo par recebido.')
-          destination = Path('_sdktools_build')
-          destination.mkdir(exist_ok=False)
-          with zipfile.ZipFile(source) as archive:
-              members = archive.infolist()
-              if len(members) > 1000 or sum(m.file_size for m in members) > 32 * 1024 * 1024:
-                  raise SystemExit('Fontes excedem o limite.')
-              seen = set()
-              for member in members:
-                  name = member.filename.rstrip('/')
-                  parts = name.split('/')
-                  key = unicodedata.normalize('NFC', name).casefold()
-                  if (member.filename != member.orig_filename or not (name.startswith('SDKtools/') or (name == 'SDKtools' and member.is_dir())) or any(p in ('', '.', '..') for p in parts)
-                      or '\\' in name or ':' in name or any(ord(c) < 32 for c in name)
-                      or key in seen or stat.S_IFMT(member.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR)
-                      or member.file_size > 4 * 1024 * 1024 or member.flag_bits & 1):
-                      raise SystemExit('Estrutura dos fontes inválida.')
-                  seen.add(key)
-              for member in members:
-                  target = destination.joinpath(*member.filename.rstrip('/').split('/'))
-                  if member.is_dir():
-                      target.mkdir(parents=True, exist_ok=True)
-                  else:
-                      target.parent.mkdir(parents=True, exist_ok=True)
-                      with archive.open(member) as reader, target.open('xb') as writer:
-                          content = reader.read(member.file_size + 1)
-                          if len(content) != member.file_size:
-                              raise SystemExit('Fonte truncado ou excessivo.')
-                          writer.write(content)
-          root = destination / 'SDKtools'
-          validation = json.loads((root / 'Validation/V3_12-validation.json').read_text())
-          if validation.get('toolVersion') != '3.12':
-              raise SystemExit('Manifesto de outra versão.')
-          for relative, expected in validation['sourceSHA256'].items():
-              parts = relative.split('/')
-              if any(p in ('', '.', '..') for p in parts) or '\\' in relative or ':' in relative:
-                  raise SystemExit('Caminho inválido no manifesto.')
-              candidate = root.joinpath(*parts)
-              if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != expected:
-                  raise SystemExit('Fonte diverge do manifesto: ' + relative)
-          print('Fontes SDKtools conferidos.')
+          """Body embedded verbatim in compilar.yml; no source code runs before this check."""
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import re
+          import shutil
+          import stat
+          import tempfile
+          import unicodedata
+          import zipfile
+
+          archive = Path("SDKtools_Fontes.zip")
+          expected_size = int("830051")
+          expected_sha = "83a7c72527c23fcfebc29b7c44552517bcdf1bd1087b643fc8e12d1ab8f58abc"
+          destination = Path("_sdktools_build")
+          manifest_name = "SDKtools/Validation/V3_13-validation.json"
+          max_entries = 1024
+          max_file = 4 * 1024 * 1024
+          max_total = 32 * 1024 * 1024
+
+          def require(condition, message):
+              if not condition:
+                  raise ValueError(message)
+
+          def checked_path(value, directory=False):
+              require(isinstance(value, str) and value, "Caminho vazio ou inválido.")
+              require("\\" not in value and ":" not in value,
+                      "Separador ambíguo ou volume no ZIP.")
+              require(not any(ord(ch) < 32 or ord(ch) == 127 for ch in value),
+                      "Caractere de controle no caminho.")
+              require(unicodedata.normalize("NFC", value) == value,
+                      "Caminho Unicode não canônico.")
+              require(not value.startswith("/"), "Caminho absoluto no ZIP.")
+              stripped = value[:-1] if directory and value.endswith("/") else value
+              parts = stripped.split("/")
+              require(1 <= len(parts) <= 12, "Profundidade inválida no ZIP.")
+              require(all(part not in ("", ".", "..") and not part.endswith((".", " "))
+                          for part in parts), "Segmento inválido no caminho.")
+              require(str(PurePosixPath(stripped)) == stripped, "Caminho não canônico.")
+              require(parts[0] == "SDKtools", "Raiz do ZIP precisa ser SDKtools.")
+              return stripped
+
+          def no_duplicate_keys(pairs):
+              result = {}
+              for key, value in pairs:
+                  require(key not in result, "Chave duplicada no manifesto.")
+                  result[key] = value
+              return result
+
+          temporary = None
+          try:
+              require(archive.is_file() and not archive.is_symlink(), "ZIP de fontes ausente ou inválido.")
+              require(archive.stat().st_size == expected_size, "Tamanho incorreto do ZIP de fontes.")
+              require(0 < expected_size <= 8 * 1024 * 1024, "Limite do ZIP de fontes excedido.")
+              require(re.fullmatch(r"[0-9a-f]{64}", expected_sha) is not None, "SHA-256 esperado inválido.")
+              zipped = archive.read_bytes()
+              require(len(zipped) == expected_size and hashlib.sha256(zipped).hexdigest() == expected_sha,
+                      "ZIP de fontes não corresponde ao workflow V3.13. Atualize ambos no mesmo commit.")
+              require(not destination.exists() and not destination.is_symlink(), "Pasta de saída já existe.")
+              members = {}
+              folded = {}
+              payloads = {}
+              modes = {}
+              expanded = 0
+              # Validate and read every member, including CRC, before writing any source.
+              import io
+              with zipfile.ZipFile(io.BytesIO(zipped)) as bundle:
+                  entries = bundle.infolist()
+                  require(0 < len(entries) <= max_entries, "Quantidade inválida de entradas no ZIP.")
+                  for entry in entries:
+                      require(entry.filename == entry.orig_filename, "Nome de membro foi truncado.")
+                      name = checked_path(entry.filename, entry.is_dir())
+                      key = name.casefold()
+                      require(name not in members and key not in folded, "Entradas duplicadas ou colidentes no ZIP.")
+                      require(not entry.flag_bits & 1, "Fonte criptografado não aceito.")
+                      mode = entry.external_attr >> 16
+                      kind = stat.S_IFMT(mode)
+                      require(kind in ((0, stat.S_IFDIR) if entry.is_dir() else (0, stat.S_IFREG)),
+                              "Link ou arquivo especial no ZIP.")
+                      require(not mode & (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX), "Permissão especial no ZIP.")
+                      require(0 <= entry.file_size <= max_file, "Membro excede limite individual.")
+                      expanded += entry.file_size
+                      require(expanded <= max_total, "Limite expandido do ZIP excedido.")
+                      members[name] = entry.is_dir()
+                      folded[key] = name
+                      if entry.is_dir():
+                          require(entry.file_size == 0, "Diretório contém bytes.")
+                      else:
+                          with bundle.open(entry) as stream:
+                              data = stream.read(max_file + 1)
+                              require(len(data) == entry.file_size and not stream.read(1),
+                                      "Tamanho real do membro difere do declarado.")
+                          payloads[name] = data
+                          modes[name] = 0o755 if mode & 0o111 else 0o644
+                  # A file may never stand in for a parent directory, including case aliases.
+                  canonical_prefixes = {}
+                  for name in members:
+                      parts = name.split("/")
+                      for end in range(1, len(parts) + 1):
+                          prefix = "/".join(parts[:end])
+                          prior = canonical_prefixes.setdefault(prefix.casefold(), prefix)
+                          require(prior == prefix, "Colisão de maiúsculas entre pastas do ZIP.")
+                          if end < len(parts):
+                              require(prefix not in members or members[prefix], "Arquivo usado como pasta no ZIP.")
+              require(manifest_name in payloads, "Manifesto V3.13 ausente.")
+              manifest = json.loads(payloads[manifest_name].decode("utf-8"), object_pairs_hook=no_duplicate_keys)
+              require(isinstance(manifest, dict) and manifest.get("toolVersion") == "3.13", "Versão incorreta do manifesto.")
+              hashes = manifest.get("sourceSHA256")
+              require(isinstance(hashes, dict) and hashes, "Mapa sourceSHA256 ausente.")
+              expected_members = set()
+              for relative, digest in hashes.items():
+                  require(isinstance(relative, str), "Caminho inválido no manifesto.")
+                  name = checked_path("SDKtools/" + relative)
+                  require(name != manifest_name, "Manifesto não pode conter seu próprio hash.")
+                  require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+                          "SHA-256 inválido no manifesto.")
+                  require(name in payloads and hashlib.sha256(payloads[name]).hexdigest() == digest,
+                          "Hash de fonte divergente: " + relative)
+                  expected_members.add(name)
+              require(set(payloads) == expected_members | {manifest_name}, "Fonte ausente ou não listado no manifesto.")
+              temporary = Path(tempfile.mkdtemp(prefix=".sdktools-verified-", dir="."))
+              for name, data in payloads.items():
+                  target = temporary.joinpath(*name.split("/"))
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  with target.open("xb") as stream:
+                      stream.write(data)
+                  os.chmod(target, modes[name])
+              # Only the fully checked tree becomes the build input.
+              require(not destination.exists() and not destination.is_symlink(), "Pasta de saída surgiu durante preflight.")
+              temporary.rename(destination)
+              temporary = None
+              print("V3.13: ZIP, caminhos, CRC e %d hashes de fontes verificados." % len(hashes))
+          except (ValueError, OSError, UnicodeError, zipfile.BadZipFile, RuntimeError) as error:
+              raise SystemExit("Preflight bloqueado: " + str(error))
+          finally:
+              if temporary is not None:
+                  shutil.rmtree(temporary, ignore_errors=True)
           PY
 
-      - name: Preparar diretório da base
+      - name: Preparar pasta da base
         run: mkdir _sdktools_input
 
-      - name: Baixar base da Release deste repositório
+      - name: Baixar a base da Release existente
         if: inputs.base_source == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -104,78 +192,72 @@ jobs:
           SDKTOOLS_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release download \
-            --repo "$GH_REPO" --pattern 'WePlay_US_6.6.2_base.ipa' \
-            --dir _sdktools_input -- "$SDKTOOLS_RELEASE_TAG"
+          gh release download --repo "$GH_REPO" --pattern 'WePlay_US_6.6.2_base.ipa' --dir _sdktools_input -- "$SDKTOOLS_RELEASE_TAG"
           mv _sdktools_input/WePlay_US_6.6.2_base.ipa _sdktools_input/base.ipa
 
-      - name: Baixar base por link HTTPS privado
+      - name: Baixar a base do link privado
         if: inputs.base_source == 'secret_url'
         env:
-          SDKTOOLS_BASE_IPA_URL: ${{ secrets.SDKTOOLS_BASE_IPA_URL }}
-        run: |
-          set -euo pipefail
-          python3 _sdktools_build/SDKtools/scripts/download_base.py --output _sdktools_input/base.ipa
+          SDKTOOLS_BASE_IPA_URL: ${{ secrets.BASE_IPA_URL || secrets.SDKTOOLS_BASE_IPA_URL }}
+        run: python3 _sdktools_build/SDKtools/scripts/download_base.py --output _sdktools_input/base.ipa
 
-      - name: Conferir identidade da base antes de compilar
+      - name: Confirmar identidade do IPA base
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import hashlib
+          import json
           from pathlib import Path
-          import hashlib, json
-          info = json.loads(Path('_sdktools_build/SDKtools/config/base_identity.json').read_text())
+          identity = json.loads(Path('_sdktools_build/SDKtools/config/base_identity.json').read_text())
           base = Path('_sdktools_input/base.ipa')
-          if base.stat().st_size != info['ipa_bytes']:
-              raise SystemExit('Tamanho da base incorreto. Envie o IPA original extraído do RAR.')
-          h = hashlib.sha256()
+          if not base.is_file() or base.is_symlink() or base.stat().st_size != identity['ipa_bytes']:
+              raise SystemExit('Base incorreta: tamanho não corresponde ao IPA original verificado.')
+          digest = hashlib.sha256()
           with base.open('rb') as stream:
-              for block in iter(lambda: stream.read(1024*1024), b''):
-                  h.update(block)
-          if h.hexdigest() != info['ipa_sha256']:
-              raise SystemExit('SHA-256 da base incorreto. Use o IPA original antes de assinar no GBox.')
-          print('Identidade da base confirmada.')
+              for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                  digest.update(chunk)
+          if digest.hexdigest() != identity['ipa_sha256']:
+              raise SystemExit('Base incorreta: SHA-256 não corresponde ao IPA original verificado.')
+          print('Base WePlay US 6.6.2/132 confirmada.')
           PY
 
-      - name: Testar e compilar framework iPhoneOS
+      - name: Executar testes e compilar o framework iPhoneOS
         working-directory: _sdktools_build/SDKtools
         run: |
           set -euo pipefail
           bash scripts/build_framework.sh 2>&1 | tee sdktools-build.log
 
-      - name: Integrar e verificar o IPA
+      - name: Integrar framework ao IPA e gerar digest
         working-directory: _sdktools_build/SDKtools
         run: |
           set -euo pipefail
-          python3 scripts/integrate_ipa.py \
-            --ipa ../../_sdktools_input/base.ipa \
-            --framework dist/SDKtools.framework \
-            --output dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.ipa 2>&1 | tee sdktools-package.log
-          shasum -a 256 dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.ipa > dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.ipa.sha256
+          python3 scripts/integrate_ipa.py --ipa ../../_sdktools_input/base.ipa --framework dist/SDKtools.framework --output dist/WePlay_US_6.6.2_SDKtools_v3_13_unsigned.ipa 2>&1 | tee sdktools-integration.log
+          cd dist
+          shasum -a 256 WePlay_US_6.6.2_SDKtools_v3_13_unsigned.ipa > WePlay_US_6.6.2_SDKtools_v3_13_unsigned.ipa.sha256
 
-      - name: Entregar IPA completo para assinatura
+      - name: Guardar IPA sem assinatura
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.12-US-IPA
+          name: SDKtools-v3.13-US-IPA
           path: |
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.ipa
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.manifest.json
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_12_unsigned.ipa.sha256
-          if-no-files-found: error
-          retention-days: 7
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_13_unsigned.ipa
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_13_unsigned.manifest.json
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v3_13_unsigned.ipa.sha256
           compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
 
-      - name: Guardar logs e símbolos
+      - name: Guardar logs e símbolos disponíveis
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v3.12-US-diagnostico-build
+          name: SDKtools-v3.13-US-Diagnostico
           path: |
             _sdktools_build/SDKtools/sdktools-build.log
-            _sdktools_build/SDKtools/sdktools-package.log
+            _sdktools_build/SDKtools/sdktools-integration.log
+            _sdktools_build/SDKtools/Validation/V3_13-validation.json
+            _sdktools_build/SDKtools/dist/SDKtools_unsigned.framework.zip
             _sdktools_build/SDKtools/dist/SDKtools.framework.dSYM.zip
-          if-no-files-found: ignore
+          compression-level: 0
           retention-days: 7
-
-      - name: Orientar download
-        run: |
-          printf '%s\n' 'Baixe SDKtools-v3.12-US-IPA nos artefatos desta execução. Extraia o ZIP e importe o .ipa no GBox. Assine também os componentes incorporados. Instalação e captura ainda precisam ser confirmadas no iPhone.' >> "$GITHUB_STEP_SUMMARY"
+          if-no-files-found: warn
