@@ -1,0 +1,1166 @@
+--- a/Analysis/V3_19_8-mission-priority.md
++++ b/Analysis/V3_19_8-mission-priority.md
+@@ -0,0 +1,32 @@
++# Alpaca: contrato de missão e prioridade — 3.19.8
++
++## Evidência estática, sem executar o jogo exportado
++
++Exportação histórica `SDKtools-GameSources-8B4DDC11-2958-4B0D-BDE3-811A3F4B11DD.json`: 5.530.425 bytes, SHA-256 `ae2d416e6b90ca841b87fa37a86e040d4524e7c104efe83e0f05f5829c7dc593`.
++
++`assets/main/index.js`: 3.641.464 bytes, SHA-256 `cbbf9dec2d3cbaf9595834934147344eca4e7c6c4fe3957b590f5c24660c19e6`. Os sete arquivos da exportação conferem tamanho/hash e marcadores completeFile/readMetadataStable. Isso é evidência de exportação completa, não atestado da versão atualmente carregada.
++
++128 módulos Browserify delimitados via AST, sem avaliar suas funções. REA analisou Task, TaskFinishAlert, GameStore, Game e GameLayer: 5 fontes, 9.059 nós AST, nenhum erro de parse. Evidence `ev_3f2c82f2b6a506cd75eec2c0024106e49a9e80a7ab2b9959726e71325cf77b74`. Limites semânticos/dinâmicos desse relatório não foram tratados como execução comprovada.
++
++## Contrato observado
++
++- `Task.setup` consulta `GameStore.getTaskInfo()`: tipo em target_block_type; rótulos current_num/total_num; barra current_num/total_num.
++- `GameStore.sync` guarda task_info; `setTaskInfo` substitui esse campo. `Block.init` conserva blockInfo.type, que já é a identidade usada pelo autoplay.
++- PushEvent.UpdateCommonTask = 11. `Game.updateCommonTask` exibe current_task_info e imediatamente armazena new_task_info. `reward_prop` é aplicado pelo jogo e anima/abre TaskFinishAlert. Por isso não se deve inferir a missão pelo ícone antigo durante a transição.
++- `TaskFinishAlert` fecha normalmente no fluxo original; o SDK não precisa consumir um poder nem fazer requisição para receber a recompensa.
++
++## Implementação
++
++Leitura opcional de campos próprios, sem chamar getters: exige Game único na cena, Game.GameLayer ligado à mesa, Task descendente válido e módulo original GameStore. Falha desse contrato desativa apenas prioridade de missão, não o autoplay existente.
++
++O planejador procura o próximo trio, não uma solução global. A missão domina o desempate entre rotas comprovadas e pode estender a busca a bloqueadores mesmo com um trio normal já disponível. A perseguição de alvos cobertos tem teto de oito slices (até 8ms cada) / 2.400 escolhas geradas. O restante do tick/leitura conserva as guardas existentes. Limite de busca não significa ausência matemática de solução.
++
++Fallback: conserva a prova normal disponível; sem prova, reinicia a ordem/orçamento normais independentemente da tentativa prioritária. Missão/progresso integra o fingerprint de continuação. Ações preparadas/rotas são invalidadas na mudança; latch de ação física incerta não é descartado.
++
++A telemetria nativa aceita apenas enums e números limitados. Progresso não é aumentado localmente. Não há novos hooks, timers, requisições, alterações de inventário, gasto/compra de poderes ou chamadas a Socket.
++
++## Verificação e limite
++
++42 novos testes JavaScript incluem prioridade sobre par, bloqueadores, missões ausentes/travadas, bandeja cheia, orçamento, troca antes do envio, preservação de envio incerto, getters não invocados e modal de recompensa. Um teste enumera 120 DAGs sintéticos com um oráculo independente de alcance do próximo trio. Testes Foundation verificam o contrato numérico e remoção de campos inválidos sem apagar o resultado de uma ação enviada.
++
++Cartas: todos os recursos byte-idênticos à 3.19.7. Bilhar: apenas versão nos dois emissores de relatório e no teste correspondente; algoritmo/recurso Lua preservado. Assinatura, instalação, leitura real de missão e recompensas no iPhone não foram executadas nesta estação Windows.
+--- a/README.md
++++ b/README.md
+@@ -1,8 +1,41 @@
+-# SDKtools3.19.7/build43 — Inject e amostragem direta para o menu
++# SDKtools 3.19.8 / build 44 — Autoplay: missão primeiro
+ 
+-Base: SDKtools3.19.6, WePlayUS6.6.2/build132. Alpaca/Bilhar sem mudança funcional.
++Base: 3.19.7; WePlay US 6.6.2/build 132. Mudança funcional apenas no Alpaca. Recursos de Cartas e Bilhar preservados.
+ 
+-## Método novo
++## O que mudou
++
++- Identifica a missão pelo `GameStore.task_info`: `target_block_type`, `current_num`, `total_num`, com vínculo verificado ao Game/Task da cena atual.
++- Prefere um **trio do tipo da missão**, mesmo havendo um par normal pronto. Também procura rotas que liberem o tipo-alvo por cartas bloqueadoras.
++- Prioridade não significa clique arbitrário: toda rota precisa terminar em um trio, respeitar máscara/travas e caber nos sete slots. Não passa por cima das regras do jogo.
++- Sem missão válida, com missão já concluída ou sem rota-alvo comprovada no limite de busca, usa o autoplay normal. Se a busca prioritária não tiver encontrado nem um trio normal, o algoritmo original ganha seu próprio orçamento de busca.
++- Reavalia quando missão/progresso muda e a cada trio concluído. Uma mudança cancela ação preparada, mas **não reenvia** ação já enviada e ainda incerta.
++- Menu/relatório distinguem missão identificada, prioridade, fallback normal e objetivo atingido. Progresso é o valor lido do jogo, não uma contagem inventada pelo SDK.
++
++## Recompensas e poderes
++
++O próprio jogo entrega recompensas pelo evento `UpdateCommonTask` (`reward_prop`) e atualiza o inventário. O autoplay não falsifica progresso, não reivindica recompensas por requisição própria, não compra e não gasta poderes automaticamente. Apenas prioriza jogadas normais para avançar a missão. O servidor continua sendo a autoridade.
++
++A animação pode manter a missão antiga na tela enquanto o Store já contém a nova: a leitura usa o Store, não o texto/ícone animado. Janelas de recompensa continuam pausando ações conforme as guardas existentes.
++
++## Usar e conferir no iPhone
++
++1. Entre no Crazy Alpaca e inicie o autoplay pelo botão já existente.
++2. Com missão disponível, confira **missão primeiro X/Y** no status. O tipo é ligado ao `Block.blockInfo.type`, não adivinhado pelo desenho.
++3. Se não houver caminho-alvo, confira **missão sem rota: modo normal**. A busca é limitada; essa frase não prova impossibilidade global.
++4. Após um trio, confira a missão/progresso do próprio jogo e o recebimento da recompensa. Não foi feita validação física dessa versão no iPhone.
++5. Em uma captura SDKtools, consulte `autoplay.planning.mission`/diagnóstico de planejamento: `status`, `targetType`, `current`, `total`. Não há IDs de jogador ou conteúdo arbitrário nessa telemetria.
++
++## Limites da validação
++
++Contrato recuperado de uma exportação histórica do Alpaca, com hashes verificados; identidade byte a byte do módulo atualmente carregado no iPhone ainda não foi demonstrada. Testes locais cobrem estratégia, bloqueadores, fallback, troca de missão, ação pendente e alertas; um oráculo independente enumera 120 tabuleiros sintéticos pequenos. Isso não garante vitória ou recompensa em todos os modos.
++
++## Compilar
++
++O ZIP `SDKtools_Fontes.zip` e o workflow `compilar.yml` desta entrega formam um par por tamanho/SHA-256. Use o workflow **Compilar SDKtools US**, `base_source=release`, `release_tag=base-us-6.6.2`. Produto: `WePlay_US_6.6.2_SDKtools_v3_19_8_unsigned.ipa`; requer assinatura e teste no aparelho.
++
++## Cartas preservado da 3.19.7
++
++
+ 
+ O menu deixa de depender de encontrar/desenhar Card nodes: lê `GameStore.gamers[].cards` diretamente e injeta3observadores temporários: `GameStore.sync`, `GameStore.updatePushMessage` e `Card.setup`. Copia valores permitidos antes da chamada original e só os conserva após a chamada terminar com sucesso. Observações Card.setup exigem componente e mão atuais coerentes. Retorno/exceção/this/argumentos do original preservados, sem repetir chamadas.
+ 
+@@ -24,6 +57,6 @@
+ 
+ Se o servidor só envia Back0 e nenhuma etapa local contém a face verdadeira, `?` continua correto. Os novos testes provam captura de valores transitórios SIMULADOS; não provam que esta versão do WePlay revele todos eles. A captura885A anterior permanece sem novas cores de oponentes no replay dos41estados gravados.
+ 
+-## Compilar
++## Fluxo anterior (histórico)
+ 
+-Parear SDKtools_Fontes.zip e .github/workflows/compilar.yml. Workflow Compilar SDKtoolsUS, base_source=release, release_tag=base-us-6.6.2. Produto `WePlay_US_6.6.2_SDKtools_v3_19_7_unsigned.ipa`, requer assinatura. Validação visual no iPhone ainda pendente.
++Parear SDKtools_Fontes.zip e .github/workflows/compilar.yml. Workflow Compilar SDKtoolsUS, base_source=release, release_tag=base-us-6.6.2. Produto `WePlay_US_6.6.2_SDKtools_v3_19_8_unsigned.ipa`, requer assinatura. Validação visual no iPhone ainda pendente.
+--- a/Resources/Info.plist
++++ b/Resources/Info.plist
+@@ -15,13 +15,13 @@
+ 	<key>CFBundlePackageType</key>
+ 	<string>FMWK</string>
+ 	<key>CFBundleShortVersionString</key>
+-	<string>3.19.7</string>
++	<string>3.19.8</string>
+ 	<key>CFBundleSupportedPlatforms</key>
+ 	<array>
+ 		<string>iPhoneOS</string>
+ 	</array>
+ 	<key>CFBundleVersion</key>
+-	<string>43</string>
++	<string>44</string>
+ 	<key>DTPlatformName</key>
+ 	<string>iphoneos</string>
+ 	<key>MinimumOSVersion</key>
+--- a/Resources/autoplay_planner.js
++++ b/Resources/autoplay_planner.js
+@@ -1,7 +1,8 @@
+ (function SDKtoolsPlannerFactory() {
+   'use strict';
+   // A private resumable search belongs to this runtime, never to a global.
+-  // V3.3 proves the next trio rather than requiring a complete-game solution.
++  // V3.19.8 prioritizes a verified mission trio with bounded normal fallback.
++  // Still proves the next trio rather than requiring a complete-game solution.
+   // A bounded lookahead compares tray headroom and newly accessible matches.
+   // A local route is not a claim of optimal play or server-confirmed victory.
+   var session = null;
+@@ -81,8 +82,14 @@
+   for (i = 0; i < cards.length; i++) cards[i].equivalence = cards[i].type + ':' + covers[i].join(',');
+   // Before the first trio, every selection consumes one slot. No first-trio
+   // route can be longer than the physical space available, even on 512 cards.
++  var mission=input.mission, missionValid=mission && textID(mission.type) && !/^(unknown|unreadable|special)$/i.test(mission.type) &&
++    Number.isInteger(mission.current) && mission.current>=0 && mission.current<=1000000 &&
++    Number.isInteger(mission.total) && mission.total>0 && mission.total<=1000000 && mission.current<=mission.total;
++  var missionType=missionValid && typeIndex[mission.type] !== undefined ? typeIndex[mission.type] : -1;
++  var missionRequested=!!(missionValid && mission.current<mission.total), missionActive=false;
++  var missionStamp=missionValid ? [mission.type,mission.current,mission.total] : null;
+   var routeDepth=Math.min(maxDepth,capacity-trayTypes.length);
+-  var fingerprint = JSON.stringify([input.stateKey || '',capacity,routeDepth,maxTotalNodes,maxTranspositions,
++  var fingerprint = JSON.stringify([input.stateKey || '',capacity,routeDepth,maxTotalNodes,maxTranspositions,missionStamp,
+     cards.map(function(c){return [c.id,rawTypes[c.type],c.available,c.locked,c.blockedBy,c.order,c.zone];}),
+     input.tray.map(function(c){return [c.id,c.type];})]);
+   function removed(state, idx) { return (state.removed[idx >>> 5] & (1 << (idx & 31))) !== 0; }
+@@ -108,19 +115,37 @@
+   var totals=counts.slice(), targetTriples=0;
+   for(i=0;i<cards.length;i++)totals[cards[i].type]++;
+   for(i=0;i<typeCount;i++)targetTriples+=Math.floor(totals[i]/3);
++  missionActive=missionRequested && missionType>=0 && totals[missionType]>=3;
++  // Mark target ancestors so an accessible normal trio does not hide a safe
++  // mission route behind one or more unrelated blocking cards.
++  var missionUseful=new Array(cards.length).fill(false), missionNeeded=[];
++  if(missionActive)for(i=0;i<cards.length;i++)if(cards[i].type===missionType){missionUseful[i]=true;missionNeeded.push(i);}
++  for(i=0;i<missionNeeded.length;i++)for(j=0;j<cards[missionNeeded[i]].blockers.length;j++){
++    var ma=cards[missionNeeded[i]].blockers[j];if(!missionUseful[ma]){missionUseful[ma]=true;missionNeeded.push(ma);}
++  }
+   var useful=new Array(cards.length).fill(false), needed=[], directTypes=[];
+   for(i=0;i<cards.length;i++)if(totals[cards[i].type]>=3){useful[i]=true;needed.push(i);}
+   for(i=0;i<needed.length;i++)for(j=0;j<cards[needed[i]].blockers.length;j++){
+     var ancestor=cards[needed[i]].blockers[j];if(!useful[ancestor]){useful[ancestor]=true;needed.push(ancestor);}
+   }
+   for(i=0;i<typeCount;i++)if(totals[i]>=3)directTypes.push(i);
+-  directTypes.sort(function(a,b){return counts[b]-counts[a] || a-b;});
++  directTypes.sort(function(a,b){return (missionActive ? (b===missionType)-(a===missionType) : 0) || counts[b]-counts[a] || a-b;});
+   if (!session || session.fingerprint !== fingerprint) {
+     session={fingerprint:fingerprint,stack:[frame(initial,-1)],dead:new Set(),generated:0,expanded:0,pruned:0,backtracks:0,
+       depth:0,slices:0,terminal:null,limit:null,proof:null,completeSearch:false,bestScore:null,candidates:0,
+       directCursor:0,direct:null,directDone:false};
+     if(!cards.length && !trayTypes.length) session.terminal='board_clear';
+     else if(!targetTriples) session.terminal='no_remaining_triples';
++  }
++  function pursuingMission() { return missionActive && !session.missionAbandoned; }
++  if(session.missionAbandoned)directTypes.sort(function(a,b){return counts[b]-counts[a] || a-b;});
++  function abandonMission(limit) {
++    session.missionAbandoned=true;session.missionNodes=session.generated;session.limit=limit;
++    // No normal proof yet: give the original algorithm its own full budget and
++    // ordering, rather than letting a failed target search starve normal play.
++    session.stack=[frame(initial,-1)];session.dead=new Set();session.generated=0;
++    session.expanded=0;session.pruned=0;session.backtracks=0;session.depth=0;
++    session.directCursor=0;session.direct=null;session.directDone=false;
+   }
+   session.slices++;
+   function result(status, reason) {
+@@ -131,6 +156,11 @@
+       stats:{expanded:session.expanded,generated:session.generated,pruned:session.pruned,backtracks:session.backtracks,
+         transpositions:session.dead.size,depth:session.depth,slices:session.slices,targetTriples:targetTriples,elapsedMs:Math.max(0,Date.now()-start),
+         limit:session.limit || sliceLimit,searchMode:'next_trio',goal:'next_trio',candidates:session.candidates,
++        missionStatus:!missionValid?'unavailable':!missionRequested?'complete':
++          proof && proof.matchedType===mission.type?'priority':status==='searching'&&pursuingMission()?'searching':'fallback',
++        missionNodes:session.missionNodes||0,
++        missionReason:!missionRequested?null:!missionActive?'not_observed':
++          proof && proof.matchedType===mission.type?null:session.limit?'search_limit':'no_safe_route',
+         completeSolution:!!(proof&&proof.empty) || status==='solved',completePlan:!!proof || status==='solved',completeSearch:session.completeSearch}};
+   }
+   function terminal() {
+@@ -140,19 +170,28 @@
+   }
+   function finishOrWait(limit, terminalLimit) {
+     if(terminalLimit)session.limit=limit;else sliceLimit=limit;
+-    if(session.proof){session.terminal='solution_found';return terminal();}
++    if(session.proof && (!pursuingMission() || session.proof.matchedType===mission.type || terminalLimit)){
++      session.terminal='solution_found';return terminal();
++    }
++    if(terminalLimit && pursuingMission()){
++      abandonMission(limit);return result('searching','search_in_progress');
++    }
+     if(terminalLimit){session.terminal='search_limit_reached';return terminal();}
+     return result('searching','search_in_progress');
+   }
+   if(session.terminal) return terminal();
++  // At most eight 8ms planner slices / 2400 generated choices per observed
++  // state pursue a covered target. Limits mean fallback, not impossibility.
++  function missionLimit() { return pursuingMission() && (session.slices>8 || session.generated>=2400); }
+   function outOfTime() { return Date.now()-start>=budgetMs; }
+-  function rank(state,idx) {
++  function rank(state,idx,missionSearch) {
+     var type=cards[idx].type, same=state.counts[type], score=same===2?100000:same===1?5000:0;
+     for(var u=0;u<covers[idx].length;u++) {
+       var child=cards[covers[idx][u]], left=0;
+       for(var v=0;v<child.blockers.length;v++) if(!removed(state,child.blockers[v])) left++;
+       if(left===1 && !child.locked) score+=20+state.counts[child.type]*100;
+     }
++    if(missionSearch && pursuingMission() && missionUseful[idx])score+=cards[idx].type===missionType?1000000:500000;
+     return score;
+   }
+   function buildOptions(f) {
+@@ -161,7 +200,7 @@
+       var idx=f.scan++, c=cards[idx];
+       if(!useful[idx] || !legal(f.state,idx)) continue;
+       if(f.equivalent[c.equivalence]){session.pruned++;continue;}
+-      f.equivalent[c.equivalence]=true;f.building.push({idx:idx,rank:rank(f.state,idx)});
++      f.equivalent[c.equivalence]=true;f.building.push({idx:idx,rank:rank(f.state,idx,true)});
+     }
+     f.building.sort(function(a,b){return b.rank-a.rank || cards[a.idx].order-cards[b.idx].order || a.idx-b.idx;});
+     f.options=f.building.map(function(o){return o.idx;}); f.building=null;f.equivalent=null;session.expanded++;
+@@ -205,6 +244,7 @@
+     // Lexicographic priorities: headroom, near-term completions, useful
+     // releases, pairs. A bounded comparison is not a global optimality proof.
+     var score=[-after.occupancy,nextTrios,released,pairs,-proof.peak];
++    if(pursuingMission())score.unshift(proof.matchedType===mission.type?1:0);
+     var better=!session.bestScore;
+     if(!better)for(var si=0;si<score.length;si++){if(score[si]!==session.bestScore[si]){better=score[si]>session.bestScore[si];break;}}
+     session.candidates++;
+@@ -238,13 +278,20 @@
+   // Any direct route has the minimum possible occupancy for its starting
+   // tray count. Prefer the best tested direct route rather than waiting for a
+   // complete game search. Hidden unlock routes are searched only if needed.
+-  if(session.proof){session.terminal='solution_found';return terminal();}
++  if(session.proof && (!pursuingMission() || session.proof.matchedType===mission.type)){
++    session.terminal='solution_found';return terminal();
++  }
++  // Keep the old best direct trio as fallback while pursuing a covered target.
++  // If no mission route is proved, never publish an unproved target single.
+   while(session.stack.length) {
+     var f=session.stack[session.stack.length-1];
+     if(f.state.triples){
+       if(!consider(session.stack.slice(1).map(function(x){return x.chosen;}))){session.terminal='invalid_route_proof';return result('invalid_state','invalid_route_proof');}
+-      session.stack.pop();session.backtracks++;continue;
+-    }
++      session.stack.pop();session.backtracks++;
++      if(pursuingMission() && session.proof && session.proof.matchedType===mission.type){session.terminal='solution_found';return terminal();}
++      continue;
++    }
++    if(missionLimit())return finishOrWait('mission_budget',true);
+     if(outOfTime())return finishOrWait('time_slice',false);
+     if(sliceGenerated>=maxNodes)return finishOrWait('node_slice',false);
+     if(f.state.removedCount>=routeDepth){session.stack.pop();session.backtracks++;continue;}
+--- a/Resources/autoplay_tool.js
++++ b/Resources/autoplay_tool.js
+@@ -6,6 +6,7 @@
+   'use strict';
+   var ids = new WeakMap(), frameIDs = new WeakMap(), nextID = 1, nextFrame = 1;
+   var stable = null, planned = null, pending = null, route = null, generation = null, confirmed = 0, cardsRead = 0, cardTypesRead = 0;
++  var observedMissionKey=null, missionState={status:'unavailable'};
+   var xrayDepth=1, planningState={state:'blocked',nodes:0,slices:0}, xray = null, xrayWanted = false, xrayState = {status:'off',coveredIcons:0,matchedBorders:0};
+   try { if (typeof makeXray === 'function') xray = makeXray(); } catch (_) {}
+   var LIMITS = { nodes: 4096, children: 512, cards: 512, depth: 24, components: 32, budgetMs: 18 };
+@@ -30,7 +31,7 @@
+   function result(status, reason, dispatched) { var output = { version: 1, status: status, reason: reason,
+     cardsRead: cardsRead, cardTypesRead: cardTypesRead, confirmedMoves: confirmed, dispatched: dispatched === true,
+     awaitingBoardChange: pending !== null };
+-    output.xray = xrayState; output.planning=planningState;
++    output.xray = xrayState; output.planning=Object.assign({},planningState,{mission:missionState});
+     if (animationDetail) output.animationDetail = animationDetail;
+     if (cardRuleDetail) output.cardRuleDetail = cardRuleDetail;
+     return output; }
+@@ -176,7 +177,7 @@
+   // trio is recalculated after completion using the newly observed board.
+   function validateRoute(s, decision, checkMarker) {
+     if (!object(decision) || !Array.isArray(decision.sequence) || decision.sequence.length < 1 || decision.sequence.length > 512 ||
+-        decision.proofKind !== 'local_trio') return null;
++        decision.proofKind !== 'local_trio' || (decision.missionKey !== undefined && decision.missionKey !== s.missionKey)) return null;
+     var removed=new Set(), bar=s.tray.map(function(c){return {id:c.id,type:c.type};}), peak=bar.length, firstTrio=null, lastTrio=null;
+     for (var i=0;i<decision.sequence.length;i++) {
+       budget(); var card=s.refs.get(decision.sequence[i]);
+@@ -196,12 +197,14 @@
+         decision.tripleCardIDs.length !== 3 || new Set(decision.tripleCardIDs).size !== 3 ||
+         !trio.every(function(v){return decision.tripleCardIDs.indexOf(v) >= 0;}))) return null;
+     return {proofKind:decision.proofKind,sequence:decision.sequence.slice(),tripleCardIDs:trio,matchedType:matchedType,
+-      peakTrayCount:peak,residualCards:left.length};
++      peakTrayCount:peak,residualCards:left.length,missionKey:decision.missionKey,missionStatus:decision.missionStatus};
+   }
+   function plannerDiagnostic(decision,state) {
+     var stats=object(decision) && object(decision.stats) ? decision.stats : {};
+     planningState={state:state,nodes:num(stats.expanded) ? Math.max(0,Math.min(1000000,Math.floor(stats.expanded))) : 0,
+       slices:num(stats.slices) ? Math.max(0,Math.min(1000000,Math.floor(stats.slices))) : 0};
++    if (['searching','priority','fallback'].indexOf(stats.missionStatus)>=0 && missionState.status!=='unavailable' && missionState.status!=='complete')
++      missionState.status=stats.missionStatus;
+     if (stats.goal === 'next_trio') planningState.goal=stats.goal;
+     if (num(stats.residualCards)) planningState.residualCards=Math.max(0,Math.min(512,Math.floor(stats.residualCards)));
+     if (route) { planningState.goal='next_trio'; planningState.residualCards=route.residualCards; }
+@@ -212,6 +215,32 @@
+     return descriptor && Object.prototype.hasOwnProperty.call(descriptor,'value') ? descriptor.value : undefined;
+   }
+   function integer(v,min,max) { return num(v) && Math.floor(v) === v && v >= min && v <= max; }
++  // Original Alpaca Task.setup reads GameStore.task_info. Do not infer the
++  // type from skins or labels: the reward animation displays the old task
++  // after updateCommonTask has already installed new_task_info in the Store.
++  // Only read the loaded module after verifying Game -> GameLayer / Task in
++  // this scene. No hooks, getters, pushes, props or mission writes are needed.
++  function readMission(cc,games,gameLayer,records) {
++    try {
++      if(games.length!==1)return null;
++      var game=games[0], layer=ownData(game,'GameLayer'), task=ownData(game,'Task');
++      if(game.isValid!==true || game.enabled===false || game.enabledInHierarchy===false ||
++          !records.has(game.node) || !layer || layer.node!==gameLayer || layer.isValid!==true ||
++          cc.js.getClassName(layer)!=='GameLayer' || !task || cc.js.getClassName(task)!=='Task' ||
++          task.isValid!==true || !records.has(task.node) || task.enabled===false || task.enabledInHierarchy===false)return null;
++      // The Game component must own the gameplay layer and task subtree.
++      function inside(n) { for(var d=0;n && d<=LIMITS.depth;d++,n=records.get(n))if(n===game.node)return true;return false; }
++      if(!inside(gameLayer) || !inside(task.node))return null;
++      var loader=ownData(window,'__require');if(typeof loader!=='function')return null;
++      var store=ownData(loader('GameStore'),'default');
++      if(!store || !Array.isArray(ownData(store,'pile_blocks')) || !Array.isArray(ownData(store,'hand_blocks')) ||
++          !Array.isArray(ownData(store,'storage_blocks')) || ownData(store,'isWatcher')!==false)return null;
++      var info=ownData(store,'task_info'), type=ownData(info,'target_block_type'),
++        current=ownData(info,'current_num'), total=ownData(info,'total_num');
++      if(!integer(type,1,10000) || !integer(total,1,1000000) || !integer(current,0,total))return null;
++      return {type:'type:'+type,current:current,total:total,key:JSON.stringify([id(game),id(store),type,current,total]),targetType:type};
++    } catch (_) { return null; } // Optional mission data must not stop normal play.
++  }
+   function cardLayout(node,cc) {
+     if (typeof node.getComponents !== 'function') cardRule('component');
+     var components=node.getComponents(cc.Component), blocks=[];
+@@ -289,7 +318,7 @@
+         !cc.Component.EventHandler || !cc.Component.EventHandler.prototype || !cc.js || typeof cc.js.getClassName !== 'function') abort('context_unavailable');
+     var emitter = cc.Component.EventHandler.prototype.emit, root = cc.director.getScene();
+     if (typeof emitter !== 'function' || !visible(root,root)) abort('context_unavailable');
+-    var stack = [{n:root,p:null,d:0}], seen = new Set(), records = new Map(), boards = [], trays = [], reserves = [], nodes = [], modal = false;
++    var stack = [{n:root,p:null,d:0}], seen = new Set(), records = new Map(), boards = [], trays = [], reserves = [], nodes = [], games = [], modal = false;
+     while (stack.length) {
+       budget(); var en = stack.pop(), n = en.n;
+       if (xray && typeof xray.owns === 'function' && xray.owns(n)) continue;
+@@ -306,6 +335,7 @@
+         if (!Array.isArray(comps) || comps.length > LIMITS.components) abort('scan_limit');
+         for (var q = 0; q < comps.length; q++) {
+           var name = cc.js.getClassName(comps[q]);
++          if (name === 'Game') games.push(comps[q]);
+           if (modeActive(comps[q],name,root)) abort('external_mode_active');
+           if (typeof name === 'string' && /Alert$/.test(name) && comps[q].enabled !== false && comps[q].enabledInHierarchy !== false) modal = true;
+         }
+@@ -397,7 +427,8 @@
+     var sig = [id(root),id(board),id(tray),id(reserve)];
+     refs.forEach(function(c){sig.push(c.id,c.zone,c.type,c.x,c.y,c.order,c.masked,c.available,c.rawID,c.layer,c.gridRow,c.gridCol,c.selectable,frameIDs.get(c.frame),c.frame.name);});
+     sig.push(warehouseSignatures);
+-    return {cc:cc,root:root,gameLayer:gameLayer,board:board,trayNode:tray,reserve:reserve,emitter:emitter,records:records,refs:refs,cards:cardList,tray:trayList,capacity:capacity,signature:JSON.stringify(sig),actionRejection:actionRejection};
++    var mission=readMission(cc,games,gameLayer,records);
++    return {mission:mission,missionKey:mission?mission.key:'unavailable',cc:cc,root:root,gameLayer:gameLayer,board:board,trayNode:tray,reserve:reserve,emitter:emitter,records:records,refs:refs,cards:cardList,tray:trayList,capacity:capacity,signature:JSON.stringify(sig),actionRejection:actionRejection};
+   }
+   function unchangedCards(before, after, chosen) {
+     var a=before.cards.filter(function(c){return c.id !== chosen;});
+@@ -428,6 +459,7 @@
+     options = options || {}; xrayWanted=options.xrayEnabled === true;
+     xrayDepth=num(options.xrayDepth) && Math.floor(options.xrayDepth) === options.xrayDepth ? Math.max(1,Math.min(5,options.xrayDepth)) : 1;
+     if (!xrayWanted) clearXray('off');
++    missionState={status:'unavailable'};
+     rejection = null; animationDetail = null; cardRuleDetail = null; started = clock(); cardsRead = 0; cardTypesRead = 0;
+     var command = options.command || 'tick';
+     if (command !== 'tick' && command !== 'pause' && command !== 'reset') { clearXray('blocked'); return result('blocked','invalid_command'); }
+@@ -443,6 +475,14 @@
+     if (typeof plan !== 'function') { clearXray(xrayWanted ? 'unavailable' : 'off'); return result('blocked','planner_unavailable'); }
+     try {
+       var s = snapshot(), now = clock();
++      if(observedMissionKey!==s.missionKey){
++        // Invalidate prepared actions, not the uncertain original action.
++        observedMissionKey=s.missionKey;planned=null;route=null;planningState={state:'blocked',nodes:0,slices:0};
++      }
++      if(s.mission)missionState={status:s.mission.current===s.mission.total?'complete':'identified',
++        targetType:s.mission.targetType,current:s.mission.current,total:s.mission.total};
++      if(route && ['priority','fallback'].indexOf(route.missionStatus)>=0 && s.mission && s.mission.current<s.mission.total)
++        missionState.status=route.missionStatus;
+       if (s.actionRejection) {
+         stable=null; planned=null; route=null; planningState={state:'blocked',nodes:0,slices:0};
+         if (pending) { pending.confirmation=null; pending.replacement=null; }
+@@ -483,7 +523,7 @@
+         var clean=s.cards.map(function(c){return {id:c.id,type:c.type,zone:c.zone,x:c.x,y:c.y,order:c.order,blockedBy:c.blockedBy.slice(),available:c.available,selectable:c.selectable};});
+         route=route && validateRoute(s,route);
+         if (!route) {
+-          var decision=plan({cards:clean,tray:s.tray.map(function(c){return {id:c.id,type:c.type};}),capacity:s.capacity,matchSize:3,budgetMs:8,stateKey:s.signature+'|'+String(generation)});
++          var decision=plan({cards:clean,tray:s.tray.map(function(c){return {id:c.id,type:c.type};}),capacity:s.capacity,matchSize:3,budgetMs:8,mission:s.mission?{type:s.mission.type,current:s.mission.current,total:s.mission.total}:null,stateKey:s.signature+'|'+String(generation)});
+           if (object(decision) && decision.status === 'searching' && decision.reason === 'search_in_progress') {
+             plannerDiagnostic(decision,'searching'); showXray(s,null); return result('planning','search_in_progress');
+           }
+@@ -495,6 +535,8 @@
+           if (!Array.isArray(decision.actions) || JSON.stringify(decision.actions) !== JSON.stringify(decision.sequence) ||
+               !decision.sequence || decision.cardID !== decision.sequence[0]) abort('planner_invalid_move');
+           route=validateRoute(s,decision,true); if (!route) abort('planner_invalid_move');
++          route.missionKey=s.missionKey;
++          route.missionStatus=object(decision.stats) && ['priority','fallback'].indexOf(decision.stats.missionStatus)>=0?decision.stats.missionStatus:null;
+           plannerDiagnostic(decision,'proved');
+         }
+         var candidate=s.refs.get(route.sequence[0]);
+--- a/Sources/SDKtools/STAutoplayRecorder.inc
++++ b/Sources/SDKtools/STAutoplayRecorder.inc
+@@ -61,6 +61,17 @@
+         label = @"Auto aguardando a carta";
+     else if ([self.autoplayStatus isEqual:@"blocked"]) label = @"Auto aguardando uma jogada válida";
+     else if ([self.autoplayStatus isEqual:@"move_confirmed"]) label = @"Auto: jogada confirmada";
++    // Mission telemetry is sanitized at the JS/native boundary. It describes
++    // priority/progress observed in the game, not a promise of server rewards.
++    NSDictionary *mission = self.autoplayPlanningDiagnostic[@"mission"];
++    NSString *missionStatus = mission[@"status"];
++    NSString *missionLabel = nil;
++    if ([@[@"identified", @"searching", @"priority"] containsObject:missionStatus])
++        missionLabel = [NSString stringWithFormat:@"missão primeiro %@/%@", mission[@"current"], mission[@"total"]];
++    else if ([missionStatus isEqual:@"fallback"]) missionLabel = @"missão sem rota: modo normal";
++    else if ([missionStatus isEqual:@"complete"]) missionLabel = @"missão atingida: aguardando jogo";
++    if (missionLabel && ![self.autoplayStatus isEqual:@"blocked"] && ![self.autoplayStatus isEqual:@"dispatch_uncertain"])
++        label = [label stringByAppendingFormat:@" · %@", missionLabel];
+     return [NSString stringWithFormat:@"%@ · %lu cartas · %lu jogadas", label,
+         (unsigned long)self.autoplayCardsRead, (unsigned long)self.autoplayConfirmedMoves];
+ }
+@@ -224,7 +235,9 @@
+         strongSelf.autoplayReadingDiagnostic = [reading copy];
+         // Keep progress for reports without rebuilding the menu every search
+         // slice. Visible status changes still trigger the normal notification.
+-        strongSelf.autoplayPlanningDiagnostic = [result[@"planning"] isKindOfClass:NSDictionary.class] ? result[@"planning"] : @{};
++        NSDictionary *nextPlanning = [result[@"planning"] isKindOfClass:NSDictionary.class] ? result[@"planning"] : @{};
++        if (![(strongSelf.autoplayPlanningDiagnostic[@"mission"] ?: @{}) isEqual:(nextPlanning[@"mission"] ?: @{})]) changed = YES;
++        strongSelf.autoplayPlanningDiagnostic = nextPlanning;
+         if ([result[@"xray"] isKindOfClass:NSDictionary.class]) {
+             NSDictionary *visual = strongSelf.xrayEnabled ? result[@"xray"] : @{@"status": @"off", @"coveredIcons": @0, @"matchedBorders": @0};
+             if (![strongSelf.xrayDiagnostic isEqual:visual]) changed = YES;
+--- a/Sources/SDKtools/STAutoplaySanitizer.inc
++++ b/Sources/SDKtools/STAutoplaySanitizer.inc
+@@ -77,6 +77,19 @@
+         NSMutableDictionary *progress = [@{@"state": planning[@"state"], @"nodes": planning[@"nodes"], @"slices": planning[@"slices"]} mutableCopy];
+         if ([@[@"clear_board", @"all_observed_triples", @"next_trio"] containsObject:planning[@"goal"]]) progress[@"goal"] = planning[@"goal"];
+         if (STWPAutoCount(planning[@"residualCards"], 512)) progress[@"residualCards"] = planning[@"residualCards"];
++        id mission = planning[@"mission"];
++        if ([mission isKindOfClass:NSDictionary.class] &&
++            [@[@"unavailable", @"identified", @"searching", @"priority", @"fallback", @"complete"] containsObject:mission[@"status"]]) {
++            BOOL absent = [mission[@"status"] isEqual:@"unavailable"];
++            BOOL valid = STWPAutoCount(mission[@"targetType"], 10000) && [mission[@"targetType"] integerValue] > 0 &&
++                STWPAutoCount(mission[@"total"], 1000000) && [mission[@"total"] integerValue] > 0 &&
++                STWPAutoCount(mission[@"current"], 1000000) && [mission[@"current"] integerValue] <= [mission[@"total"] integerValue];
++            BOOL completed = valid && [mission[@"current"] isEqual:mission[@"total"]];
++            if (absent) progress[@"mission"] = @{@"status": @"unavailable"};
++            else if (valid && (completed == [mission[@"status"] isEqual:@"complete"]))
++                progress[@"mission"] = @{@"status": mission[@"status"], @"targetType": mission[@"targetType"],
++                    @"current": mission[@"current"], @"total": mission[@"total"]};
++        }
+         safe[@"planning"] = [progress copy];
+     }
+     return [safe copy];
+--- a/Sources/SDKtools/STBilliardsResourceExporter.m
++++ b/Sources/SDKtools/STBilliardsResourceExporter.m
+@@ -289,7 +289,7 @@
+         @"filesChanged":@(changedFiles),@"bytesExported":@(bytesExported),@"entriesVisited":@(budget.visited),
+         @"truncated":@(budget.truncated),@"errorCode":@0};
+     if(diagnostic)*diagnostic=diag;
+-    return @{@"format":@"SDKtools.BilliardsResources",@"schema":@"SDKtools.BilliardsResources",@"schemaVersion":@1,@"toolVersion":@"3.19.7",@"outcome":outcome,
++    return @{@"format":@"SDKtools.BilliardsResources",@"schema":@"SDKtools.BilliardsResources",@"schemaVersion":@1,@"toolVersion":@"3.19.8",@"outcome":outcome,
+         @"currentMatchIdentified":@NO,@"nativeGameType":NSNull.null,@"sceneType":NSNull.null,
+         @"billiardsPredictionAvailable":@NO,@"collectionMode":@"local_cached_catalogs",
+         @"catalogSelection":@"all_bounded_candidates_no_active_catalog_assumption",@"diagnostic":diag,
+--- a/Sources/SDKtools/STBilliardsRuntime.m
++++ b/Sources/SDKtools/STBilliardsRuntime.m
+@@ -530,7 +530,7 @@
+     if (!NSThread.isMainThread) { if(error)*error=STBLError(3,@"Exporte pelo menu do jogo."); return nil; }
+     [self stopWithReason:@"export"];
+     if (!self.lastSnapshot.count) { if(error)*error=STBLError(4,@"Ative o bilhar antes de exportar o diagnóstico."); return nil; }
+-    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.19.7",
++    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.19.8",
+         @"createdUTC":[NSISO8601DateFormatter.new stringFromDate:NSDate.date],@"lastSnapshot":self.lastSnapshot,
+         @"lastAimBeforeMotion":self.lastAimBeforeMotion ?: (id)NSNull.null,
+         @"lastShotObservation":self.lastShotObservation ?: (id)NSNull.null,
+--- a/Sources/SDKtools/STGameSourceExporter.m
++++ b/Sources/SDKtools/STGameSourceExporter.m
+@@ -194,7 +194,7 @@
+         if(written){included++;totalSource+=size;}
+     }}
+     BOOL complete=!skipped.count&&!inventory->timedOut&&!inventory->entryLimit&&!inventory->excessiveDepth&&!inventory->excessiveCandidates&&!inventory->errors&&!inventory->symlinks&&!inventory->other;
+-    NSDictionary *metadata=@{@"format":@"SDKtools.GameSources",@"schemaVersion":@1,@"toolVersion":@"3.19.7",
++    NSDictionary *metadata=@{@"format":@"SDKtools.GameSources",@"schemaVersion":@1,@"toolVersion":@"3.19.8",
+         @"gameID":@(observedGameType),@"gameIdentitySource":@"caller_verified_native_controller",@"application":@{@"bundleIdentifier":@"com.wejoy.weplay.us",@"version":@"6.6.2",@"build":@"132"},
+         @"rootScope":[NSString stringWithFormat:@"verified_current_game_package_under_%@/littleGame",storageRoot],@"entryRelativePath":@"index.html",
+         @"pathDiagnostic":pathDiagnostic,@"rootSelection":nativeResourceURL?@"original_game60_native_resource_and_current_document":(observedGameType==60?@"current_document_known_game60_folder":@"current_document_game2007_exact_folder_policy"),
+--- a/Sources/SDKtools/STOverlay.m
++++ b/Sources/SDKtools/STOverlay.m
+@@ -267,7 +267,7 @@
+     heading.axis = UILayoutConstraintAxisVertical;
+     heading.spacing = 2;
+     [heading addArrangedSubview:[self label:@"SDKtools" size:23 weight:UIFontWeightBold color:UIColor.whiteColor]];
+-    [heading addArrangedSubview:[self label:@"V3.19.7 · Alpaca, Bilhar e Cartas" size:11 weight:UIFontWeightMedium color:STOrange()]];
++    [heading addArrangedSubview:[self label:@"V3.19.8 · Alpaca, Bilhar e Cartas" size:11 weight:UIFontWeightMedium color:STOrange()]];
+     [header addArrangedSubview:heading];
+     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+     [close setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+--- a/Sources/SDKtools/STRecorder.m
++++ b/Sources/SDKtools/STRecorder.m
+@@ -1384,7 +1384,7 @@
+     }
+     NSTimeInterval duration = self.startedAt > 0 ? (self.isRecording ? STNow() : self.stoppedAt) - self.startedAt : 0;
+     NSDictionary *report = @{
+-        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.19.7",
++        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.19.8",
+         @"moduleAvailability": @{@"alpaca": @YES, @"cards": (ST_CARD_GAME_FEATURE_ENABLED ? @YES : @NO),
+             @"cardsStatus": ST_CARD_GAME_FEATURE_ENABLED ? @"available" : @"paused_by_owner", @"billiardsIdentified": @NO,
+             @"billiardsResourceExportAvailable": @YES, @"billiardsPredictionAvailable": @NO},
+--- a/Tests/autoplay_bridge_test.m
++++ b/Tests/autoplay_bridge_test.m
+@@ -45,6 +45,33 @@
+             Check(Invalid(row), @"invalid count rejected");
+         }
+     }
++    for (NSString *missionStatus in @[@"identified", @"searching", @"priority", @"fallback", @"complete", @"unavailable"]) {
++        NSMutableDictionary *row = Result(@"watching", NO);
++        row[@"planning"] = @{@"state": @"proved", @"nodes": @12, @"slices": @2,
++            @"mission": @{@"status": missionStatus, @"targetType": @2,
++                @"current": [missionStatus isEqual:@"complete"] ? @9 : @3, @"total": @9, @"secret": @"drop"}};
++        NSDictionary *mission = STWPSanitizeAutoplay(row)[@"planning"][@"mission"];
++        Check([mission[@"status"] isEqual:missionStatus], @"mission status retained");
++        Check(!mission[@"secret"], @"arbitrary mission text removed");
++        if ([missionStatus isEqual:@"unavailable"]) Check(mission.count == 1, @"absent mission has no invented progress");
++        else Check([mission[@"targetType"] isEqual:@2] && [mission[@"total"] isEqual:@9], @"bounded target/progress retained");
++    }
++    for (NSDictionary *mission in @[
++        @{@"status": @"secret", @"targetType": @2, @"current": @0, @"total": @3},
++        @{@"status": @"priority", @"targetType": @YES, @"current": @0, @"total": @3},
++        @{@"status": @"priority", @"targetType": @0, @"current": @0, @"total": @3},
++        @{@"status": @"priority", @"targetType": @10001, @"current": @0, @"total": @3},
++        @{@"status": @"priority", @"targetType": @2, @"current": @4, @"total": @3},
++        @{@"status": @"complete", @"targetType": @2, @"current": @0, @"total": @3},
++        @{@"status": @"priority", @"targetType": @2, @"current": @3, @"total": @3},
++        @{@"status": @"priority", @"targetType": @2, @"current": @0, @"total": @1000001},
++        @{@"status": @"priority", @"targetType": @2, @"current": @0.5, @"total": @3}]) {
++        NSMutableDictionary *row = Result(@"original_event_dispatched", YES);
++        row[@"planning"] = @{@"state": @"proved", @"nodes": @12, @"slices": @2, @"mission": mission};
++        NSDictionary *safe = STWPSanitizeAutoplay(row);
++        Check(!safe[@"planning"][@"mission"], @"invalid optional mission discarded");
++        Check([safe[@"dispatched"] boolValue], @"mission telemetry cannot erase a dispatched action");
++    }
+     NSMutableDictionary *tooMany = Result(@"watching", NO); tooMany[@"cardsRead"] = @4097;
+     Check(Invalid(tooMany), @"card count boundary enforced");
+     for (NSString *key in @[@"dispatched", @"awaitingBoardChange"]) {
+--- a/Tests/autoplay_planner.test.cjs
++++ b/Tests/autoplay_planner.test.cjs
+@@ -198,3 +198,86 @@
+  for(let i=0;i<68;i++){const output=run(input);assert.equal(output.status,'move');replay(input,output);total+=output.sequence.length;input=advanceInput(input,output.sequence);}
+  assert.equal(total,204);assert.equal(run(input).status,'solved');
+ });
++
++// V3.19.8: mission hints change priority, never the proved action contract.
++function mission(type,current=0,total=9){return {type,current,total};}
++test('mission trio outranks completing an unrelated existing pair',()=>{
++ const input=state([card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],['A','A'],{mission:mission('M')}),out=run(input);
++ assert.equal(out.matchedType,'M');assert.equal(out.stats.missionStatus,'priority');assert.equal(out.sequence.length,3);replay(input,out);
++ assert.equal(run({...input,mission:null}).cardID,'a');
++});
++test('mission search explores unrelated blockers even when a normal direct trio exists',()=>{
++ const input=state([card('b','X'),card('m1','M',['b']),card('m2','M'),card('m3','M'),card('a1','A'),card('a2','A'),card('a3','A')],[],{mission:mission('M')}),out=run(input);
++ assert.equal(out.matchedType,'M');assert.equal(out.stats.missionStatus,'priority');assert.ok(out.sequence.includes('b'));replay(input,out);
++});
++test('two layers of mission blockers are replayed without inventing a click through the mask',()=>{
++ const input=state([card('b1','X'),card('b2','Y',['b1']),card('m1','M',['b1','b2']),card('m2','M'),card('m3','M'),...['a1','a2','a3'].map(id=>card(id,'A'))],[],{mission:mission('M')}),out=run(input);
++ assert.equal(out.matchedType,'M');assert.ok(out.sequence.indexOf('b1')<out.sequence.indexOf('b2'));assert.ok(out.sequence.indexOf('b2')<out.sequence.indexOf('m1'));replay(input,out);
++});
++for(const reason of ['absent','scarce','locked','full_headroom'])test('normal exact fallback with '+reason+' mission route',()=>{
++ let cards=[card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],tray=['A','A'];
++ if(reason==='absent')cards=cards.filter(c=>c.type!=='M');
++ if(reason==='scarce')cards=cards.filter(c=>c.id!=='m3');
++ if(reason==='locked')cards[1].locked=true;
++ if(reason==='full_headroom')tray=['A','A','B','B','C','C'];
++ const input=state(cards,tray),normal=run(input),out=run({...input,mission:mission('M')});
++ assert.equal(out.stats.missionStatus,'fallback');assert.deepEqual(out.sequence,normal.sequence);assert.equal(out.matchedType,'A');replay(input,out);
++});
++test('a completed mission no longer overrides normal strategy',()=>{
++ const input=state([card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],['A','A'],{mission:mission('M',9,9)}),out=run(input);
++ assert.equal(out.stats.missionStatus,'complete');assert.equal(out.cardID,'a');replay(input,out);
++});
++for(const bad of [null,{},mission('M',-1),mission('M',1.5),mission('M',10,9),mission('M',0,0),mission('M',true),mission('unknown'),mission('M',0,1000001)])test('invalid optional mission falls back without invalidating board '+JSON.stringify(bad),()=>{
++ const input=state([card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],['A','A']);
++ const out=run({...input,mission:bad});assert.deepEqual(out.sequence,run(input).sequence);assert.equal(out.stats.missionStatus,'unavailable');replay(input,out);
++});
++test('mission identity/progress is part of resumable search fingerprint',()=>{
++ const plan=createPlanner(),input=state([card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],['A','A'],{mission:mission('M'),maxNodes:1});
++ assert.equal(plan(input).status,'searching');const changed={...input,mission:mission('A',3,6),maxNodes:600};
++ const out=plan(changed);assert.equal(out.stats.slices,1);assert.equal(out.cardID,'a');assert.equal(out.stats.missionStatus,'priority');replay(changed,out);
++});
++test('bounded pursuit waits rather than prematurely publishing a normal direct fallback',()=>{
++ const input=state([card('a','A'),card('b','X'),card('m1','M',['b']),card('m2','M'),card('m3','M')],['A','A'],{mission:mission('M'),maxNodes:1});
++ const plan=createPlanner();let out;const slices=[];for(let i=0;i<30;i++){out=plan(input);slices.push(out);if(out.status!=='searching')break;}
++ assert.ok(slices.some(r=>r.status==='searching'&&r.stats.candidates>0),'normal proof remains provisional while target is pursued');
++ assert.equal(out.status,'move');assert.ok(out.stats.slices<=9);replay(input,out);
++});
++test('search budget returns the original proved normal route, not an unproved target single',()=>{
++ const input=state([card('a','A'),card('b','X'),card('m1','M',['b']),card('m2','M'),card('m3','M')],['A','A'],{mission:mission('M'),maxNodes:1,maxTotalNodes:4});
++ const out=run(input);assert.equal(out.stats.missionStatus,'fallback');assert.equal(out.stats.missionReason,'search_limit');assert.equal(out.cardID,'a');replay(input,out);
++});
++test('mission can resume on the next trio after normal play clears a crowded tray',()=>{
++ let input=state([card('a','A'),card('m1','M'),card('m2','M'),card('m3','M')],['A','A','B','B','C','C'],{mission:mission('M')});
++ const first=run(input);assert.equal(first.matchedType,'A');input=advanceInput(input,first.sequence);
++ const second=run(input);assert.equal(second.matchedType,'M');assert.equal(second.stats.missionStatus,'priority');replay(input,second);
++});
++
++test('failed mission pursuit without a normal direct proof still runs the original normal unlock search',()=>{
++ const input=state([card('top','X'),card('a1','A',['top']),card('a2','A'),card('a3','A'),card('m1','M',[],{locked:true}),card('m2','M'),card('m3','M')],[],{mission:mission('M'),maxNodes:1});
++ const out=run(input);assert.equal(out.status,'move');assert.equal(out.matchedType,'A');assert.equal(out.stats.missionStatus,'fallback');assert.ok(out.stats.missionNodes>0);replay(input,out);
++});
++
++test('independent exhaustive oracle: 120 small DAG boards always prefer an available target trio or prove normal fallback',()=>{
++ let seed=0x3198;const rand=n=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed%n;};
++ function reachable(input,target){
++  const initial=input.tray.map(c=>c.type),memo=new Set();
++  function visit(removed,bar){
++   const key=removed+'|'+bar.slice().sort().join(',');if(memo.has(key))return false;memo.add(key);
++   for(let i=0;i<input.cards.length;i++){
++    const c=input.cards[i];if((removed&(1<<i))||c.locked||c.blockedBy.some(id=>!(removed&(1<<Number(id.slice(1))))))continue;
++    const count=bar.filter(t=>t===c.type).length;
++    if(bar.length+1>input.capacity || (bar.length+1===input.capacity&&count!==2))continue;
++    if(count===2){if(!target||c.type===target)return true;continue;}
++    if(visit(removed|(1<<i),bar.concat(c.type)))return true;
++   }
++   return false;
++  }
++  return visit(0,initial);
++ }
++ for(let sample=0;sample<120;sample++){
++  const cards=Array.from({length:9},(_,i)=>{const blockedBy=[];for(let j=0;j<i;j++)if(rand(9)===0)blockedBy.push('c'+j);return card('c'+i,['A','B','C'][rand(3)],blockedBy,{locked:rand(20)===0});});
++  const counts={A:0,B:0,C:0},tray=[];for(let i=0,n=rand(5);i<n;i++){const t=['A','B','C'][rand(3)];if(counts[t]<2){counts[t]++;tray.push(t);}}
++  const input=state(cards,tray,{mission:mission('B')}),hasTarget=reachable(input,'B'),hasNormal=reachable(input),out=run(input);
++  assert.equal(out.status==='move',hasNormal,'sample '+sample);if(hasTarget)assert.equal(out.matchedType,'B','sample '+sample);replay(input,out);
++ }
++});
+--- a/Tests/autoplay_tool.test.cjs
++++ b/Tests/autoplay_tool.test.cjs
+@@ -39,7 +39,7 @@
+ }
+ // The adapter uses performance.now; its embedded planner uses Date.now. Both
+ // must share controlled time so scheduler delays cannot consume the 8ms budget.
+-function setup(f,{planner,clockStep=0,xrayFactory}={}){let now=0;const win={cc:f.cc};win.top=win;const context=vm.createContext({window:win,document:{visibilityState:'visible',readyState:'complete'},performance:{now:()=>{now+=clockStep;return now;}},Date:{now:()=>now},input:null,planner:planner||null,xrayFactory:xrayFactory||null});
++function setup(f,{planner,clockStep=0,xrayFactory}={}){let now=0;const win={cc:f.cc,...(f.loader?{__require:f.loader}:{})};win.top=win;const context=vm.createContext({window:win,document:{visibilityState:'visible',readyState:'complete'},performance:{now:()=>{now+=clockStep;return now;}},Date:{now:()=>now},input:null,planner:planner||null,xrayFactory:xrayFactory||null});
+  vm.runInContext('var runtime=('+source+')(planner||('+plannerSource+'),xrayFactory||('+xraySource+'));',context,{timeout:500});
+  return{context,advance:n=>{now+=n;},tick(options={}){context.input={command:'tick',allowAction:true,resumeGeneration:1,...options};return JSON.parse(JSON.stringify(vm.runInContext('runtime(input)',context,{timeout:1000})));}};
+ }
+@@ -549,3 +549,59 @@
+   rt.tick();rt.advance(100);assert.equal(rt.tick().reason,'planner_invalid_move');assert.equal(f.calls.length,0);
+  }
+ });
++
++function attachMission(f,type,current=0,total=9){
++ const taskNode=f.node(),task={className:'Task',node:taskNode,isValid:true,enabled:true,enabledInHierarchy:true};taskNode.comps.push(task);f.game.children.push(taskNode);taskNode.parent=f.game;
++ const layer={className:'GameLayer',node:f.game,isValid:true},game={className:'Game',node:f.root,isValid:true,enabled:true,enabledInHierarchy:true,GameLayer:layer,Task:task};f.root.comps.push(game);
++ const store={task_info:{target_block_type:type,current_num:current,total_num:total},pile_blocks:[],hand_blocks:[],storage_blocks:[],isWatcher:false};
++ let loads=0;f.loader=name=>{assert.equal(name,'GameStore');loads++;return {default:store};};return {store,task,game,layer,loads:()=>loads};
++}
++function missionFixture(){return makeFixture([{zone:'board',type:'a',x:-240,numericType:1},{zone:'board',type:'m',x:-80,numericType:2},{zone:'board',type:'m',x:0,numericType:2},{zone:'board',type:'m',x:80,numericType:2},{zone:'tray',type:'a',x:-240,numericType:1},{zone:'tray',type:'a',x:-160,numericType:1}]);}
++test('loaded GameStore mission is matched to Block numeric type and prioritized via original event',()=>{
++ const f=missionFixture(),m=attachMission(f,2),rt=reachDispatch(f);assert.equal(f.calls[0].event,f.cards[1].event);
++ const d=rt.tick().planning.mission;assert.deepEqual(d,{status:'priority',targetType:2,current:0,total:9});assert.ok(m.loads()>0);assert.equal(m.store.task_info.current_num,0,'never fabricates mission progress');
++});
++test('original old Task UI during reward animation cannot override new authoritative Store mission',()=>{
++ const f=missionFixture(),m=attachMission(f,2);m.task.curCountLabel={string:'9'};m.task.totalCountLabel={string:'9'};
++ reachDispatch(f);assert.equal(f.calls[0].event,f.cards[1].event);
++});
++test('mission target change between planning and dispatch cancels the prepared action and replans first',()=>{
++ const f=missionFixture(),m=attachMission(f,2),rt=setup(f);rt.tick();rt.advance(200);assert.equal(rt.tick().reason,'plan_ready');
++ m.store.task_info={target_block_type:1,current_num:0,total_num:3};rt.advance(200);const r=rt.tick();assert.equal(r.reason,'plan_ready');assert.equal(f.calls.length,0);
++ rt.advance(200);assert.equal(rt.tick().status,'original_event_dispatched');assert.equal(f.calls[0].event,f.cards[0].event);
++});
++test('mission progress changes invalidate prepared routes, not pending actions or confirmation',()=>{
++ const f=missionFixture(),m=attachMission(f,2),rt=reachDispatch(f),chosen=f.cards.find(c=>c.event===f.calls[0].event);
++ m.store.task_info.current_num=3;rt.advance(10000);assert.equal(rt.tick().reason,'confirmation_uncertain');assert.equal(f.calls.length,1);
++ move(f,chosen,f.tray);rt.advance(200);assert.equal(rt.tick().reason,'confirm_stability');rt.advance(200);assert.equal(rt.tick().status,'move_confirmed');assert.equal(f.calls.length,1);
++});
++test('completed mission and unobserved target use existing normal pair completion',()=>{
++ for(const [target,current,total,status] of [[2,9,9,'complete'],[999,0,9,'fallback']]){
++  const f=missionFixture();attachMission(f,target,current,total);const rt=reachDispatch(f);assert.equal(f.calls[0].event,f.cards[0].event);assert.equal(rt.tick().planning.mission.status,status);
++ }
++});
++for(const fault of ['missing_loader','throwing_loader','accessor_loader','invalid_info','accessor_info','bad_type','bad_progress','watcher','wrong_layer','wrong_task','duplicate_game','foreign_task'])test('optional mission '+fault+' cannot interrupt or redirect valid normal play',()=>{
++ const f=missionFixture(),m=attachMission(f,2);let accessed=0;
++ if(fault==='missing_loader')delete f.loader;
++ if(fault==='throwing_loader')f.loader=()=>{throw Error('unavailable');};
++ if(fault==='invalid_info')m.store.task_info=null;
++ if(fault==='accessor_info')Object.defineProperty(m.store,'task_info',{get(){accessed++;throw Error('must not read');}});
++ if(fault==='bad_type')m.store.task_info.target_block_type='2';
++ if(fault==='bad_progress')m.store.task_info.current_num=-1;
++ if(fault==='watcher')m.store.isWatcher=true;
++ if(fault==='wrong_layer')m.layer.node=f.board;
++ if(fault==='wrong_task')m.task.className='OtherTask';
++ if(fault==='duplicate_game')f.root.comps.push({...m.game});
++ if(fault==='foreign_task')m.task.node=f.node();
++ const rt=setup(f);
++ if(fault==='accessor_loader')Object.defineProperty(rt.context.window,'__require',{get(){accessed++;throw Error('must not call');}});
++ reachDispatch(f,rt);assert.equal(f.calls[0].event,f.cards[0].event);assert.equal(rt.tick().planning.mission.status,'unavailable');assert.equal(accessed,0);
++});
++test('mission disappearance before execution cannot dispatch the stale priority card',()=>{
++ const f=missionFixture(),m=attachMission(f,2),rt=setup(f);rt.tick();rt.advance(200);rt.tick();m.store.task_info=null;
++ rt.advance(200);assert.equal(rt.tick().reason,'plan_ready');assert.equal(f.calls.length,0);rt.advance(200);rt.tick();assert.equal(f.calls[0].event,f.cards[0].event);
++});
++test('mission reward modal never authorizes auto claiming or spending a power',()=>{
++ const f=missionFixture();attachMission(f,2);const alert=f.node();alert.comps.push({className:'TaskFinishAlert',enabled:true,enabledInHierarchy:true});f.root.children.push(alert);alert.parent=f.root;
++ const rt=setup(f);assert.equal(rt.tick().reason,'modal_visible');rt.advance(10000);assert.equal(rt.tick().reason,'modal_visible');assert.equal(f.calls.length,0);
++});
+--- a/Tests/billiards_resource_exporter_test.m
++++ b/Tests/billiards_resource_exporter_test.m
+@@ -61,7 +61,7 @@
+     NSURL *url=Run(documents,library,&diag,&error);NSDictionary *report=JSON(url);
+     Check(url&&error==nil&&report!=nil,@"empty cache still returns a diagnostic JSON");
+     Check([diag[@"status"] isEqual:@"resources_missing"]&&[diag[@"filesExported"] integerValue]==0,@"empty cache is not success reading balls");
+-    Check([report[@"format"] isEqual:@"SDKtools.BilliardsResources"]&&[report[@"toolVersion"] isEqual:@"3.19.7"],@"new export format identified");
++    Check([report[@"format"] isEqual:@"SDKtools.BilliardsResources"]&&[report[@"toolVersion"] isEqual:@"3.19.8"],@"new export format identified");
+     Check(![report[@"currentMatchIdentified"] boolValue]&&![report[@"billiardsPredictionAvailable"] boolValue],@"cached files never identify current match or prediction");
+ 
+     NSString *name=@"billiard_cres_0123456789abcdef0123456789abcdef";
+--- a/Tests/test_packaging.py
++++ b/Tests/test_packaging.py
+@@ -53,7 +53,7 @@
+     for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'card_sampler.js'):
+         (framework/resource).write_text('(function(){return function(){return {};};}())')
+     (framework/'billiards_probe.lua').write_text('return "{}"')
+-    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'43','CFBundleShortVersionString':'3.19.7','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
++    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'44','CFBundleShortVersionString':'3.19.8','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
+     return ipa,framework,config
+ 
+ 
+@@ -253,7 +253,7 @@
+             plist=framework/'Info.plist';info=plistlib.loads(plist.read_bytes())
+             info['CFBundleShortVersionString']='3.19.4';info['CFBundleVersion']='40'
+             plist.write_bytes(plistlib.dumps(info))
+-            with self.assertRaisesRegex(IntegrationError,r'3\.19\.7'): integrate(ipa,framework,identity,root/'new.ipa')
++            with self.assertRaisesRegex(IntegrationError,r'3\.19\.8'): integrate(ipa,framework,identity,root/'new.ipa')
+             self.assertFalse((root/'new.ipa').exists())
+ 
+     def test_required_tool_resource_missing_rejected_without_output(self):
+--- a/Validation/V3_19_8-validation.json
++++ b/Validation/V3_19_8-validation.json
+@@ -0,0 +1,401 @@
++{
++  "schema": "SDKtools.Validation.v3.19.8",
++  "toolVersion": "3.19.8",
++  "captureToolVersion": "3.19.8",
++  "frameworkBuild": "44",
++  "date": "2026-10-16",
++  "baseline": {
++    "toolVersion": "3.19.7",
++    "sourceZipSHA256": "2159bab50e16c276b94a5f9a855116c119a0dff19b6304a88ca25e2213283a56",
++    "commit": "2ebe7543dc74a9244bee1331a339355f26a87eac"
++  },
++  "scope": "Alpaca mission target trio priority with bounded normal fallback; original card events, pending confirmation and modal guards preserved. Cards/Billiards functionally unchanged. No reward requests, inventory writes or automatic power use.",
++  "localValidation": {
++    "javascriptPassed": 624,
++    "newMissionTests": 42,
++    "independentOracleSyntheticBoards": 120,
++    "pythonRun": 94,
++    "pythonPassed": 90,
++    "pythonSkipped": 4,
++    "pythonFailures": 0
++  },
++  "evidence": {
++    "historicalExportSHA256": "ae2d416e6b90ca841b87fa37a86e040d4524e7c104efe83e0f05f5829c7dc593",
++    "originalMainSHA256": "cbbf9dec2d3cbaf9595834934147344eca4e7c6c4fe3957b590f5c24660c19e6",
++    "reaEvidenceID": "ev_3f2c82f2b6a506cd75eec2c0024106e49a9e80a7ab2b9959726e71325cf77b74",
++    "applicationCodeExecuted": false
++  },
++  "limits": {
++    "missionSearchSlices": 8,
++    "missionGeneratedChoices": 2400,
++    "plannerSliceMs": 8,
++    "routeProof": "first_local_trio_not_global_victory",
++    "signingPerformed": false,
++    "newFeatureDeviceTested": false
++  },
++  "sourceSHA256": {
++    "Analysis/Captura-US-V2-20261014.json": "c447e481c2f95699d5ff370507dc8a74b6d334b0802dd1b60e042cfd986eb494",
++    "Analysis/Captura-US-V2_1-20261014.json": "6e0e5efae471d1957f98a93f175d069de517f5e80d7c6ded7907aa00b227fcd7",
++    "Analysis/Historico-Asia/Unity-Sheep-evidence.json": "a3a04b8c791a9f25022d8cd45970a969aa7c4018783f9fede4c7b9c348bc261d",
++    "Analysis/Historico-Asia/Unity-Sheep.md": "3b8a1fde925172758e9afbad7e2520b04a560f51ddf813ce077ba9e924a0e67f",
++    "Analysis/Historico-Asia/WePlay-CrazyAlpaca.json": "367c62d03549c67978675ebef722873571da1461c2d0df30efa83490c7352518",
++    "Analysis/Historico-Asia/WePlay-CrazyAlpaca.md": "d751f99c09550a2b67919609413089de57660dd571144c4b1eefbe4a284b8b07",
++    "Analysis/Pesquisa-UseProp-Armazem-V2_8.md": "5bb785f77a401716435ff261abad00432263c83b9e88966e58e57ec09a2fa4e2",
++    "Analysis/Retornar-evidence-v22.json": "ceb3649216e10e6f9be4999e11e4532f0295dd4f669e6d5a961a3cc9ee497d65",
++    "Analysis/Retornar-evidence-v23.json": "5f8801ae57489c74a87418a44e9ca5aa278b07c160baf58713c5c7deb8018cdf",
++    "Analysis/Return-limit-investigation.json": "2ffcc83a861d1e825fac0cff5f1f8a650c5636488097832ea3be9b943942f080",
++    "Analysis/V2_6-autoplay-evidence.json": "0765af10e71fad99e709a42022ea9aebae28b6fe16d1cfb72ae8620f7fa75089",
++    "Analysis/V2_6-new-captures.json": "2c519d2f610857a3ecc0bcc278c7340c36443fa86f5b972c76f5f09a0d8029e8",
++    "Analysis/V2_7-autoplay-diagnosis.json": "a7a1fa04ac68a50267d2a41ddfc5928ab459943fa8d7779b47034a40135873e9",
++    "Analysis/V2_7-power-consumption.json": "48a7e22c13db3d1096e33f3b3c2a9a022beaf2d99b2f1ab4b2b277605a63b5a5",
++    "Analysis/V2_8-warehouse-evidence.json": "f90e08fc71713e075c4d46892bee2546006a8e1196a5e57187f76eb9cb0fbbc6",
++    "Analysis/V2_8_1-build-fix.md": "b6e9d2ca33a44477887c9269f26f187a38744d56b483439250fb2c0a40f593af",
++    "Analysis/V2_9-autoplay.json": "2736f6073b3f5a4b4c94a88aaf2bd5ee6594b59d4dfa969ea1142019e0e4532c",
++    "Analysis/V2_9-export.json": "9ccd420d73c7b4d42c347e6cb5ddce6ad464d037659a81e1945d425aa4fb8d3f",
++    "Analysis/V2_9-warehouse-powers.json": "0cee520dccf5612dde76caffc779900b730952b0907b6f471b33eec6b80de913",
++    "Analysis/V2_9-warehouse-powers.md": "4ab0b0b2395e45fc045c359dc676fa26e73d6508370f8c0d0ecec91eb748d7af",
++    "Analysis/V3_0-autoplay.json": "6c11f90fe22992fb7dd5a9635f0c4eb282a4016671bfe619afd4bc991aab838c",
++    "Analysis/V3_0-export.json": "031006ab47a1a6702b74dfcf78dcf277f15de58317486245656475ec9ddb37c9",
++    "Analysis/V3_0-planner.json": "a0412c89bcef431253533cb3d1936b9b82a640d33a4bf3339a4233379f971644",
++    "Analysis/V3_0-warehouse.json": "111ee4ff32b0cd80cf6ae50a54325bc6cbce9d60cbcc0495cf46195333bf2585",
++    "Analysis/V3_1-autoplay.json": "fe96daf4bd9d95657b6e9e8a592f989662bdea9c5cbc1baf153bc365b3d8ca93",
++    "Analysis/V3_1-original-rules.json": "85741555341b1fcfee95613e932a73aa06d20663d940f42d7ad150970ab3d43f",
++    "Analysis/V3_1-original-rules.md": "a0ebaae57aa9c7f38d6f50a8d5c3da9a0acfc9c7250726aacf0d9ffc04550a23",
++    "Analysis/V3_1-planner.json": "a6f88a27e8f39f934dcbcce7fd3feaa43aa3ef6d509da46ccff41b091c35d31a",
++    "Analysis/V3_1-xray.json": "b6d1eee82ec810039818e95398f19c0a5083192af2fbb26a636ee692fa81e0c8",
++    "Analysis/V3_10-card-flow.json": "2d6e8f76d5e16ff167bc5d8e27f9a96104493b573ce9666ba459a29a65f429bc",
++    "Analysis/V3_11-card-flow.json": "37ebfb5c2403cba74ed7ef69e07ff73990583c2f038235ff90c77bbf27053ee1",
++    "Analysis/V3_12-input-capture.json": "4c6b7578b95d5e919e0128218e1d764c8df0a16fecbd5e90358f42b01a83ea70",
++    "Analysis/V3_12-input-capture.md": "5ee79630c5f0f3d4716d9ac0f130c0009ac76d781f40a87912e72f934205b85c",
++    "Analysis/V3_13-billiards-discovery.json": "aec3e68a218620c53b140b727ae0579ba0c3a5a040a3048439f088562fa0d15f",
++    "Analysis/V3_13-billiards-discovery.md": "796819c4524fe0c851e97569be70cfdc8a71bb7f945d0393efde3261e0744c11",
++    "Analysis/V3_14-billiards-unity.md": "8029fb8df521fb97c027342e80060f7e6f20711e21daaa0eaee48c3dace81ea2",
++    "Analysis/V3_14-evidence/INDEX.json": "db3dff242dfdceb09bec25411a85868772ca58628c5c16537e9104f560c4af81",
++    "Analysis/V3_14-evidence/extracted-identity.json": "473afa18b46c3230180c9ca282fea85bdeba14d5d0b303fb51022407bce6c320",
++    "Analysis/V3_14-evidence/input-identity.json": "775e4ab3887326e56e786212a2c37b41b5c7b7b42f58c1aadc22dcdd52c2a98d",
++    "Analysis/V3_14-evidence/ipa-inspection.json": "174455cc7b5cbe34be6bffe2ca69cc6b72d27119db1dc17dc2085612cd670f7e",
++    "Analysis/V3_14-evidence/metadata/billiard-manifest-schema.json": "f9cf1661604434ef9bdac3184993d15c54cad4e2dde85b9889aa504bda5f0c1e",
++    "Analysis/V3_14-evidence/metadata/loader-declarations-resolved.json": "cd89f03516c7d71820d2ac0808fdbc20a54f8f2a5602915d329c444b989fbf5b",
++    "Analysis/V3_14-evidence/metadata/loader-state-contracts-resolved.json": "e00638fc743c9028fa89113afae5304874252c35c714b68807100946f8b3b6c8",
++    "Analysis/V3_14-evidence/metadata/metadata-findings.json": "d16263339721e609fdccf523d2e4203046ff6cbf78f3d0e129a00a924388e570",
++    "Analysis/V3_14-evidence/metadata/parse_metadata.py": "141e500afaed21cb6e16ff7c363cdfdc0403d5a64ffa2c87e07ece63cee5d19f",
++    "Analysis/V3_14-evidence/metadata/resolve_native_types.py": "8949338aab8546e9b41dc37e28a8f2263c6b4e0d6daf9738edf8a48e7b7433da",
++    "Analysis/V3_14-evidence/metadata/unity-observation-api-contracts-resolved.json": "96289710ebfb72a7aff6dcb065b462de4fdef2bdf5ad049d5783212bfbdbfcf3",
++    "Analysis/V3_14-evidence/native/IL2CPP_ABI_Contracts.json": "8ceff64c75a5aa50e4076487239124a0c2231af94f57e58e19695fdfe0715378",
++    "Analysis/V3_14-evidence/native/Unity_Native_Findings.json": "08064f952808fc33276d76cc00e16f2bde84e115418d72ae1da5cb616dc219d5",
++    "Analysis/V3_14-evidence/native/analyze_macho.py": "c59ab6232eb14131aeac8f7cd18d8f5011bdcb23dc4fd52496f430f1bd887a39",
++    "Analysis/V3_14-evidence/native/dump_methods.py": "60b1f1e2b276b49c9db00085ffcacd884bcba248cc689090b4890daf54cf204f",
++    "Analysis/V3_14-evidence/native/main/identity.json": "de957f61310e16d1eb6362873787f4aaac96ac183569b30e67c07eae78863980",
++    "Analysis/V3_14-evidence/native/unity/LoadGame_MoveNext_arm64.json": "aad4f73f626a18ad46fc9b55410a13ba94d85f2fc279958c200a687b92b82605",
++    "Analysis/V3_14-evidence/native/unity/codegen_modules.json": "071e4ae86a7e5a0e5d5d91d83ef44951d7aeb0a1ffc1119140302aeeee8a28e9",
++    "Analysis/V3_14-evidence/native/unity/exports.json": "d1db09d0aafb146de8fb70bd9908fee92a3aa2e9071ec28dc43683b859039c7d",
++    "Analysis/V3_14-evidence/native/unity/hall_getters_arm64.json": "7ded4ce250bf03c78025c6251675b67a900a366ced88cdabc610a9452a7a9d1d",
++    "Analysis/V3_14-evidence/native/unity/identity.json": "bd1b9b9672aa715aa352a710aec84861e84c8a1ec896c8180a59c213be493fe3",
++    "Analysis/V3_14-evidence/native/unity/il2cpp_api_disassembly.json": "a7fb5d796342d70b94750e3fa83aa2bcd5d1c753839a38cbb7153f7fe37c003b",
++    "Analysis/V3_14-evidence/native/unity/manifest_local_paths_arm64.json": "050fdbc092f44e085d76f8f1676330fe6d343dc3f3eba571e4d171ce21403b2e",
++    "Analysis/V3_14-evidence/native/unity/persistent_path_icall_registration.json": "22b2d47dff519d85b8d80bd05e68fd078f8fb151084953dc20e6f0ca33cdd124",
++    "Analysis/V3_14-evidence/native/unity/persistent_path_native_arm64.json": "80703642869458785fb5fdc36ed5d32e82b1606b09a82f253872ee30b0ee9eb2",
++    "Analysis/V3_14-evidence/native/unity/recompression_arm64.json": "e4495b26fa34e11d74dddf8112608c9031e0bca02ae9381f7d5b8e9c121c3ca3",
++    "Analysis/V3_14-evidence/native/unity/registration.json": "97a8bc604a36b31f9a75d77fc6ff6277d61e7b87195efc233d6f0cf1cec3c771",
++    "Analysis/V3_14-evidence/native/unity/resource_paths_arm64.json": "8828af1fbaf3b5fbf76fe1eeb7c312e0f463b670c9e9b393e215ea6dc7ec52ba",
++    "Analysis/V3_14-evidence/native/unity/resource_roots_arm64.json": "16e4e58862a5a4606c70571aa1d33cd983336be0a9107a65778c081a124cea5e",
++    "Analysis/V3_14-evidence/resources/billiard-export-allowlist.json": "1c8649e5ab3e390de6fd2e40f116bf36e96057e26de2284501d9a1c370a26c62",
++    "Analysis/V3_14-evidence/resources/billiard-manifest-decoded.json": "c3b213abda64a1d5255076d1f9a3f7e1908056376f8a09f9a8114fce56f017c0",
++    "Analysis/V3_14-evidence/resources/billiard-manifest-wire.json": "e4598760f5487dcc35524b22f843ba8e3584e76aff85e03bb37c7e1f00a9f391",
++    "Analysis/V3_14-evidence/resources/decode_manifest_wire.py": "4e7aab2c1e41556801c2b86b41af2bf40f8c67e683d90f95ac9a5b68ddac8d24",
++    "Analysis/V3_14-evidence/resources/inspect_resources.py": "0692ca617a54f61f903a45b8685242bfa6caf84428cb419eea963f3faabe8aa6",
++    "Analysis/V3_14-evidence/resources/resources-report.json": "100a90ec1cb7236b099afade5d989ac3413cd52c8486f0a0d84a5ec5450544dc",
++    "Analysis/V3_15-billiards-live.md": "f2539ccb410630c13de90c604b44448143034a0759c8ced6f365066f40667db5",
++    "Analysis/V3_15-evidence/INDEX.json": "46340b66cd52020144ba7b7dcf0a36749db1e33ea714274b8433f91e89b073fa",
++    "Analysis/V3_15-evidence/capture_findings.md": "c0269bbdd740caacb2662b2ef8c63351285a2d65ca634602323cd69d2240ee0f",
++    "Analysis/V3_15-evidence/lua-index.json": "6b88196e0c313fb3f93097819f712abb44fa0f1ae9c40318734082b3ce81011b",
++    "Analysis/V3_15-evidence/lua_bridge_evidence.json": "628db5ba8f05467341e76a04a19c498b3718eb1600a2fb67b96549081a467f41",
++    "Analysis/V3_15-evidence/lua_c_api_arm64.json": "95fae77eea4f5d447f507532efd4e81245ac15cc962192e513cead5c1ff62491",
++    "Analysis/V3_15-evidence/lua_lifetime_arm64.json": "dce021b448e9528d1a17202bdc43a2c19e77dc0b42156c830a07b87675012b3f",
++    "Analysis/V3_15-evidence/lua_loader_environment_arm64.json": "b211a79b1a903d0e89e6e414cd4c86f044214ec356d435c45d655d1db6d298ab",
++    "Analysis/V3_15_1-build-fix.md": "2a506ac670c0f2451b1e5f815cec746cf20326e0bcd81474eb044e0582a6053a",
++    "Analysis/V3_16-environment-contract.md": "7a812d729b40a46a70269aa67eee06ed2e62fdefe3c395dfb53c3e6d097c7cf7",
++    "Analysis/V3_17-capture-audit.json": "089dce1cd96dd1c528ff30993b0a22eb68d19ce710bb9c76b078f3a2bef025a4",
++    "Analysis/V3_17-resolution-contract.md": "ed859c3b9fc32f42d5c09099facdcceb15f08afe6da5c731d5399e896eaaa04a",
++    "Analysis/V3_18-capture-audit.json": "8c3bd3e1e1ffc3af4ee246ec815711ea5cc3e3a891b2d4761bc13eecf600790b",
++    "Analysis/V3_18-capture-findings.md": "8d7968cc3d4eb382c8e3093d5dc4a6dab058f3e02bbf2c41cffcbf88efbf4c5d",
++    "Analysis/V3_18-chain-contract.md": "bcf99c9816086ed6019829bc7af32abeafe5a788dd998f6dbbf371f09531523b",
++    "Analysis/V3_18_1-build-fix.md": "977d1d86bc62bcca726c226fee24e477630c0771c52533cff97cc97e07d0c4d6",
++    "Analysis/V3_19-archive-inventory.json": "e57b79d46cb2c8b74d0365d6bb2cb45a975f5f0a7780b8fa80c15d19a59aaeb3",
++    "Analysis/V3_19-core-physics-review.md": "c470dead7c4d2a42c6668f8c819700a07c3be04ffaf10d697dfc1285291e3811",
++    "Analysis/V3_19-extracted-files.json": "83ebd02cd08ed719e6d42e6aa98f01fe3ea35fb56db1153dae9956861aeca8d8",
++    "Analysis/V3_19-motion-analysis.py": "361491fad9f7aeab27fcb9835607305d791ce096d3abecfabb85cb1354796469",
++    "Analysis/V3_19-motion-calibration.json": "bc623933668b52e9cb29cfa59067a0bd6ae1a83e8739a828b570cb51aec0e12c",
++    "Analysis/V3_19-motion-report.md": "550699794ae9c2e20a5e775dd413977992f7630b62189466050f46873ad4c9b7",
++    "Analysis/V3_19-native-contract-audit.md": "1ee6c312ff19e0cdd4a8925a57940056d74d5897b81bd3ee0d64d80b0a6376f2",
++    "Analysis/V3_19-sliding-transition-validation.json": "53aac6a441b4fd59a5c004615edb3100e32775d118488fe3e1c2aeb8983f9470",
++    "Analysis/V3_19-sliding-transition-validation.md": "4a06294a26e8135e4ec93658d5224c30fdc3880f8447106d091019a389be4702",
++    "Analysis/V3_19-source-physics.md": "ec955e584343c4dc3489e6a66f9fa2d798570f274abd831fef670a5c5f30b7c0",
++    "Analysis/V3_19-video-findings.md": "8d6d6b9af69d68e5694637de8eda2e75e8d93cd828d9757084496bbde3e7ca42",
++    "Analysis/V3_19_1-build-fix.md": "5237ff55640365db041ea5a6154ce1e624dfe45e6a3798e111f6aa9f16da41f1",
++    "Analysis/V3_19_1-finite-chain.json": "88d3e8a32a64182430db8f3d211a99a0e0f1f57448c1cb57e0dfe2582854c826",
++    "Analysis/V3_19_2-capture-findings.md": "6e8213533adcef69c2dc0d2666d941b5c058c22b927adc4faaca08d387420e8a",
++    "Analysis/V3_19_2-capture-summary.json": "65d4d99a5222804f43a2fb4491b68c0d00c36a5c34c8e42987e50bd508e87fb3",
++    "Analysis/V3_19_2-xlua-enum-profile-review.md": "a7a1905c48d8c42e7f09947fa9c2ac7b346a4abb3fd020e749ec0132caa186c4",
++    "Analysis/V3_19_2-xlua-tostring-arm64.json": "7ecbed84bf3a2283127dd56b26176cedec25c550127fabdfb89331f8ade89940",
++    "Analysis/V3_19_3-build-fix.md": "1acad698523651942d274c0f57ff5be90c4c23ea1d94c1aac0958dda10e23a7c",
++    "Analysis/V3_19_4-cards.md": "8e51c58499bdb715d0020578f66753efc3f96aaf68d023a99ad89f76c5134e57",
++    "Analysis/V3_19_5-select-give.md": "513434be8d235dc8537bdcaa8456f738ab7e131a82c8714c5bda2ae0c7df02e2",
++    "Analysis/V3_19_6-counts.md": "205d0bd73c20f725791084e0229ad88fc92afc13354596ee967b0d4468546693",
++    "Analysis/V3_19_7-injected-sampling.md": "cd2bc361782bdd6033f35515cb2d105223fe6c80f9d8eb3d7473eaf28aec1bb2",
++    "Analysis/V3_19_8-mission-priority.md": "34fc5309099d0a3c1aa945238cb9372ceb5cbaa8d0082cfb72ccde8274ba022d",
++    "Analysis/V3_2-autoplay.json": "17b89d0ce231e0cd71c7b3c9c8416207a4d2c20c5f6d5f5c1ed4935dc81ec800",
++    "Analysis/V3_2-original-rules.json": "6c199ca310e74fd1af1f5398cccabe357296c66c3801b16f377c0bccc178e8ff",
++    "Analysis/V3_2-original-rules.md": "064a3653845de4ce8c5b455eae367913e0333fafc827eb22a65ee6c4462a1d3c",
++    "Analysis/V3_3-autoplay.json": "bcd23e1fe8d4d41a35f5619d0b84204d0ad8c6d59412b31b033ad195ada23d02",
++    "Analysis/V3_3-capture.json": "16f0e09165351e100e56d215bb6a0a71d35bce1a0fd8d042a22e82bacb0b2b15",
++    "Analysis/V3_3-capture.md": "cdc21fd81d7d2ab9250a02821f4bc9c6299d8e861639573da4c375db5b91601d",
++    "Analysis/V3_3-new-game-capture.json": "423f25049c63a3bf83011754e951aefe8a72f5ad9964a1df157279ba8f5157d7",
++    "Analysis/V3_3-xray.json": "bc9e3c23caee703dc27cc663930ab18b8fd55f39bf7f29889494f34014aaf705",
++    "Analysis/V3_3_1-build-fix.json": "e7d670fdf56c0da41f0dca31024b4f474bfeed0542e1a7c02019fb6ed8185f54",
++    "Analysis/V3_4-card-hints-capture.json": "b54f1f7afc2b795702483ac3608260d5c0662dacf934fd85134dd2ab3ce5da53",
++    "Analysis/V3_4-card-hints-capture.md": "883ee3d17e37a2a6b9c8d60d7fc7e77af809deea84e696ac10fb2e45e72e4a7a",
++    "Analysis/V3_4-card-hints.json": "e9486d3cdc81fead9bd8ae8b110b69579b142be9b6544298b93184da8c56f828",
++    "Analysis/V3_5-card-investigation.json": "b707f0dd15b259bb7db8fc784d771926f6784a1605b9e5e7981fd239e936132d",
++    "Analysis/V3_5-card-probe-review.md": "68fb0985eaa60c2bf06cce69f385ed5cf6af74db7bdef24ede8072c36ba185a6",
++    "Analysis/V3_5-source-export-evidence.json": "0dddddba495275cce06ed285d4f6626c84c78061950ae1547ca350b111cf1ed1",
++    "Analysis/V3_5-source-export-review.md": "aa2e91d879a31077f5a03857807c0e987e5fe39ff9c857bef5418daeb0fc70a0",
++    "Analysis/V3_5_1-build-fix.json": "9c36233096ac8d8f41459e5987a3e8e636cb80eff913f0e67fb767089b122b5f",
++    "Analysis/V3_6-capture-failure.json": "7daa6565afdf273b910e815931fa7366cbca80ca52e7e6cf66bb208797b7dfb3",
++    "Analysis/V3_6-capture-failure.md": "0ef5195beb7b279df577672785f6d879a36bdaec61fd1d8f24fc0d2bf9f35b0d",
++    "Analysis/V3_6-capture-fix.json": "e137555835a2179e3b5c848f164a2e0dfd278c7064b96670794e74c61d186c7f",
++    "Analysis/V3_6-card-contract.json": "c5710ed45a9f153d44387786effd8a580afa3984ef378684cd5249e0afbe7ef3",
++    "Analysis/V3_6-card-hints.json": "66d55fdb5c6c6263887d82617d860042e3c08668c14d509fc07e3b76a451e3f9",
++    "Analysis/V3_6-menu.md": "f4169dde0e4d47403ae2bb7219955d1d9e3f2f988ad4d4896291dc1a9dba3172",
++    "Analysis/V3_7-capture-analysis.json": "87e000f67cf3c2f0ef65cae3527629edb2b2762928136137dd9410a55a570509",
++    "Analysis/V3_7-card-xray.json": "f63d2e4fb475fe23be4fa1fee73bc0d5fe8bbe8a4d67be95783db27db0a22e9c",
++    "Analysis/V3_8-card-flow.json": "9d41309ae0d1a6653f6499a847e84d6b693607c3415d0da4be9ad1526cb35d4f",
++    "Analysis/V3_9-card-flow.json": "1179213c76e85555e7db254f9da6e64dae055a8a06ff23760d618201903c4e44",
++    "Analysis/WePlay-US-CrazyAlpaca.json": "8a80d15372604ac94099ee1ada000f65414f991a4a870a1f5fa86b6761b69a27",
++    "Analysis/WePlay-US-CrazyAlpaca.md": "6bdbb9adc7418880627d409febf7d629a5fa092346cbe5b1a18bdb9714c63040",
++    "Analysis/replay_hand_counts.cjs": "610e6bb9bab482373168ac8f074120845458249aa35edda17ef309fe65b7017b",
++    "Analysis/replay_injected_sampler.cjs": "932a8303473206c813914aea29fb819710433edd06b8cbf5dc586fe5fcffa18e",
++    "README.md": "77c90a17ef2ebd7bc66870cafbeb8bfc60d9686fe85709ca183acb2c8a8a4e2e",
++    "Resources/Info.plist": "03b8ebf4bef7ac39c9c65a0ff5bb123a9474dfae461d13ea427c25b8ae649677",
++    "Resources/autoplay_planner.js": "77c88457ad9efe6373ce550482b95c1a896c61651291abba52d4325ecc1e8e51",
++    "Resources/autoplay_tool.js": "2fa2a3d94b246311d039870ed0f91c4a349d1030b9f09f466352f8b317e4ced4",
++    "Resources/billiards_probe.lua": "cf9c1d9cfe7fbd4e2368d7c621d3fc421db46641c4d6e1e0328c7ebc23e92619",
++    "Resources/card_early.js": "19efa975e9f0e3805bea877af51d1f20b39868c26c335d4a08faf7927e89b9ed",
++    "Resources/card_flow.js": "3f24a6994961bd75ef940b8e36ec64d41dcfff0a028c71e01b9c5b4fcd7aa973",
++    "Resources/card_hints.js": "67135aa910e40985bec86873864c135fc7c93149a4c42824bfac17d263dc40d7",
++    "Resources/card_probe.js": "457ae79cce58c6c98269555bf2945a3c4a418a2524d4e332165a15c46e35851b",
++    "Resources/card_root.js": "fea0356d94b032528291fa6fdccea184b0c732e650a59c6ed3ea524cd4cd8f68",
++    "Resources/card_sampler.js": "6e680277e8e560ef755eb5bf1109b0ae11e8f1ff45ef5eee605ae4af48c308bd",
++    "Resources/return_tool.js": "5bf6fa38183dd762bdbf73de17d314aa9c8ec8149a85c66d3e03e657e63b9259",
++    "Resources/scene_probe.js": "a275168ed6d19720ca7103878e05e5a9c4dc2131fdb935c9efe2a833cd500272",
++    "Resources/warehouse_tool.js": "2db3b1af7d712144243bc002168c0d6988579106f8de4825a19f07e94f048094",
++    "Resources/xray_overlay.js": "1268ed2f57e04ef6113cea5764a4cacb8afec5439c23d8990d4f528eeb4afe18",
++    "Sources/SDKtools/SDKtools.h": "a6af41ffeab4c0810678ed42d77ccca77516ae3d8170718ea43ed1fe4021a440",
++    "Sources/SDKtools/SDKtools.m": "1b14423369b089fc5ede0618e0617e8a1800ea55b90f77cbd8361f542fd85072",
++    "Sources/SDKtools/STAutoplayBridge.inc": "0e74a3ff0a1af10a28948af5bf50db9bd77be6498eb14b9dcf88d88ea4c936e9",
++    "Sources/SDKtools/STAutoplayRecorder.inc": "6433e82a88a8ccc3b850ae57b056d4ba729546d25c58a24ece483019a925234d",
++    "Sources/SDKtools/STAutoplaySanitizer.inc": "f0eeceeebb4ab1e59723cc0ac4f5a794f54258df2a910a2f1121962ac5426130",
++    "Sources/SDKtools/STBilliardsCaptureReport.h": "e36a3e7e40bf9410b4609356e500af18162b47897ed840266fbbdc2fa855fec3",
++    "Sources/SDKtools/STBilliardsCaptureReport.m": "c468c6ac87ad4f659694559bf46489ad2828211d1d47f5ae2e18a82e07106790",
++    "Sources/SDKtools/STBilliardsGuideDrawing.h": "a9edb8c4b46a61c4329681ae5ec5625101b2a74b2eac6bcb2be581dae9384da3",
++    "Sources/SDKtools/STBilliardsGuideDrawing.m": "d7436bd17926d759e3efae68fe2463629a64d88615fc9e823da1df6c7b025f9a",
++    "Sources/SDKtools/STBilliardsLivePolicy.h": "16fc9df1291f0a8eb8b59bba6bbe704b200a51753af109ae63e423714eedceae",
++    "Sources/SDKtools/STBilliardsLiveSnapshot.h": "a3da431e8b1272ec3902c7887acb75ba90737f64921a8bf1f319743a1a8bb0c4",
++    "Sources/SDKtools/STBilliardsLiveSnapshot.m": "c41cb6deac208672c20a56616a37d2c769db22dda5c35ca48ed26566d3c51311",
++    "Sources/SDKtools/STBilliardsLuaBridge.h": "2b8253ed1c6291440a5901f93175921fe9338f4313638401f9265cbc7d9b9831",
++    "Sources/SDKtools/STBilliardsLuaBridge.m": "1b328526e0acdfc86af569b4fd51c26140ffa75fa264751a21cf41955aae1e0e",
++    "Sources/SDKtools/STBilliardsNumericPolicy.h": "0d8aa504ecee5f3019d8e518375ef7117d9a72c9b1e2951ff34713ad41578420",
++    "Sources/SDKtools/STBilliardsResourceExporter.h": "407187bc91101ea607248262af0ac2b829dc59fc5762a851f816761aef937c0e",
++    "Sources/SDKtools/STBilliardsResourceExporter.m": "86e955df5796653fe29a40e52c0d29e764de8975b4fd7915a85fada45c9b4865",
++    "Sources/SDKtools/STBilliardsResourceIO.h": "26757fc4ccdb39383ab11d25abeab3c59b645b0c3195278c8330487ad8db5e6c",
++    "Sources/SDKtools/STBilliardsRuntime.h": "a4105199c668bea94c13a14c9230e98a1cf5f5b67fa732c749f4e1b812f49b80",
++    "Sources/SDKtools/STBilliardsRuntime.m": "75cf7158967b5fd62dfe84c5ef3fff53bda341eb7ae8dcdc4caa5ff942b556fb",
++    "Sources/SDKtools/STCardColorFeed.h": "889d6e9034a2bbe658c5619542953a5fc7be990516620424f3028e9c86fcc0ca",
++    "Sources/SDKtools/STCardColorFeed.m": "e7f48ae6ec3e5d2b0233689b1d8917d0a6a95b336c7ac0a9ef9d3c2f7b8f8b68",
++    "Sources/SDKtools/STCardEarlyCapture.h": "dcbf24e2c4c4dab6f0e086fa0dc5378450dc7fab240e42864c3237286b86e4ee",
++    "Sources/SDKtools/STCardEarlyCapture.m": "cabeb47787e0ef6b9ab1158d9637feb4f2b6fdc8d92b2a0cdd97c4ebdff14fe9",
++    "Sources/SDKtools/STCardEarlyRecorder.inc": "b72d6931b357accd324ac10df93edd9a01128884ebd3ef83fd4c270a55ecfe85",
++    "Sources/SDKtools/STCardEarlySanitizer.inc": "b314daa4f4ca602021d3f7e8d9f9c0bb97d6fe43ba0e2ffa6c3cc75fdd22ba65",
++    "Sources/SDKtools/STCardFeaturePolicy.h": "365a75ef8ffb4dede3a094be92ca617e94d6692c25513c1e361f61b276a1cddc",
++    "Sources/SDKtools/STCardFlowBridge.inc": "1abed99bb291682bbe0d1be0d2b0985b64a898807fd7f923a5284e211dc1282a",
++    "Sources/SDKtools/STCardFlowRecorder.inc": "e8f16020f9152deb49c4317d8603b2e507ae1aa8cc919721adc870bb26152087",
++    "Sources/SDKtools/STCardFlowSanitizer.inc": "b929ea226e71ac59ee4bcb68c3bf12d9ec56d53cb9272f68972bfdd8c2d378a5",
++    "Sources/SDKtools/STCardHintsBridge.inc": "9ebee06c475b19f4247afba60ec0d6049481d9d50a29d4a3b2d6dd36aa7db860",
++    "Sources/SDKtools/STCardHintsRecorder.inc": "c9ea1f57b6eea192dd2c25ae169a035938b78d2963388949293bf50e10a2ac63",
++    "Sources/SDKtools/STCardHintsSanitizer.inc": "2ed5dcba0a1b1aaa4391351b50e57c829a33b59520149a2084b6309eb63f8b7a",
++    "Sources/SDKtools/STCardInvestigationBridge.inc": "ea82b2d448e62699009c9e92e9dc53e428beebe36304774d82be37d5a6f72fee",
++    "Sources/SDKtools/STCardInvestigationRecorder.inc": "bc38246211379e971ceb08eb77e7860b4acb25ade5b557f2612e5f59b30b106b",
++    "Sources/SDKtools/STCardInvestigationSanitizer.inc": "99c0fdcada6794beae7b04616010af154756652721fd6737483427c8b7ff5fb8",
++    "Sources/SDKtools/STCardLifecycle.h": "4fbaf1d7ac42215dc97fabfe9da8f87f011a4df166fa639c9d7e9d40cf9b3e12",
++    "Sources/SDKtools/STCardRootRecorder.inc": "c192b44cce1eb04b5e4d3c4e80eba390b65d443f8cef351210a05b7293258e8b",
++    "Sources/SDKtools/STCardSamplerMenu.h": "e4be3acf7548426ef1623979754d24f485c8a810a912ad14c117756553034165",
++    "Sources/SDKtools/STGameSourceExporter.h": "e27f95cb7cafcffe2633bb735605cb0e8358021a019ccb2a8031c541126971ec",
++    "Sources/SDKtools/STGameSourceExporter.m": "06e90b085eaa6e57ea856b18a3e2f059e9364f7d509f1e8fa6875a1cce141313",
++    "Sources/SDKtools/STGameSourceIO.h": "709cdcde89d326a8dc9b59b80ba16219e894680f3f18f8e3c52408229413bc05",
++    "Sources/SDKtools/STGameSourceNativePath.inc": "3d3f73b101ca272dcf5a58cb7ce1d141342dd60c0ec35fda3636068c8a0e9296",
++    "Sources/SDKtools/STNativeActionPolicy.h": "95693deab515d68ae09624ffa5b9dfc765404ae81ddca16ebba9d15cc7c5fcc3",
++    "Sources/SDKtools/STNewGameCapture.inc": "ce37cbc25581423c104027ef090288ba8653ea97ed0f61b3ceae1d849448b0d4",
++    "Sources/SDKtools/STNewGameCapturePolicy.h": "814916a8c1123b07459fd274f8976bf269b56833a8e959eddc7209d35c9f7934",
++    "Sources/SDKtools/STOverlay.h": "f6a4146b5b3ad4deafffbee06c9fcb1a6f742593cc06c45273bc0c81784467c2",
++    "Sources/SDKtools/STOverlay.m": "84043988b727132810a987da49c8cd49354f5ab721d27c01e092d396036f06bc",
++    "Sources/SDKtools/STPowerSanitizer.inc": "e66e6fd2fe686cfe4c4379acb1c53598fb20558a689ced740ec9ba84b20f9517",
++    "Sources/SDKtools/STRecorder.h": "516ebc40c99df92edc6ee2703e225f71510488a8e5257384b4be749e43264389",
++    "Sources/SDKtools/STRecorder.m": "de40a2d6f876119980c70aa9876bf4318fb6bf709bde889d4562b4a48a66a8e0",
++    "Sources/SDKtools/STSceneCodec.h": "bc7e04ea6cd323e38eed86245665eb3575e6e91fcba3e7e702b0a83a428bc245",
++    "Sources/SDKtools/STSceneCodec.m": "70f8cd02569e800966baa145dd033b7f5560a5af13072100449a68cf774be13d",
++    "Sources/SDKtools/STWarehouseBridge.inc": "d211631cc490aabf4b3dcec3bc7ea70e166bc474e473f488f76b64b01a16b453",
++    "Sources/SDKtools/STWarehouseSanitizer.inc": "1c176dd19628dd314bbe31064912777a6178dae88404a9eb2d673203e436c867",
++    "Sources/SDKtools/STWebProbe.h": "4611fdbca3629997c0880d2c94571c634fd3d394ad739e0ec3f28b2a54c5323d",
++    "Sources/SDKtools/STWebProbe.m": "4c8a8b2ce424240c44a6bad96b263b1a9ceafeead672195271d8ce24d5b4ac67",
++    "Sources/SDKtools/STWebProbeSanitizer.inc": "45522ae237b7535b8ced7aaed39dec00573b77f18100f74bbd6052502531dc77",
++    "Tests/autoplay_bridge_test.m": "094c8dc54a13ddf3ae9553da53327696ff9a26cfa83a535cfa7bfdc25f9ea6b5",
++    "Tests/autoplay_planner.test.cjs": "2cdd45eb354ec900200972a8aea169e191aebc13f67607d3481eae9fdb7e7883",
++    "Tests/autoplay_tool.test.cjs": "dcb03a71f6fadd63f92c6ed86322d4ebc457132549c29981f99e930a4bf3b332",
++    "Tests/billiards_live_policy_test.c": "b28a49e5e0abf2a731e1ddad9036652c5f7f8c29e9991518a49bcfcffcab6ed3",
++    "Tests/billiards_live_snapshot_test.m": "c8823fab5faa6e3162ed2070cb0671f90087845670bd5351673d636118626f0f",
++    "Tests/billiards_numeric_policy_test.c": "cb6a5806a7b2ddcbb09d8ab8a7058b421040420d315a0cb9f16c727c4588b562",
++    "Tests/billiards_resource_exporter_test.m": "329214691c57aa11f1676d83fd83c808fcaa5351aab815f2d6e6411b5e6a963d",
++    "Tests/card_early.test.cjs": "1cbee758a2eec75088c527ac62e8a9e5eaddd00453662511ad41adf64d636796",
++    "Tests/card_early_disabled_test.m": "1d964509f23cec948250aa06859524bafbc791c1c7a59ebd5a45275c0bf734fb",
++    "Tests/card_early_fixture.cjs": "1cc06cfde14a1476051fd554c50565b5678df6c6891f3bc7a2754f73044f81b1",
++    "Tests/card_early_sanitizer_test.m": "fd3cc0f34edb85aaf2cc48631dd4c4f1a255b6ed73a33f1ab43128ee92816979",
++    "Tests/card_flow.test.cjs": "b4806c4ff901ca174bcc741800db82789544038cfa8825048e0f9788581d62b6",
++    "Tests/card_flow_bridge.test.cjs": "06cf47faf9be89d4312908f8dd8e26cb638e52a716a95c5c8a5c04b3f552dcde",
++    "Tests/card_flow_fixture.cjs": "06eb822f9b8f60460a1b27b2bc7df0c7ad7f86230f096e4b9b0872c2192dfedf",
++    "Tests/card_flow_sanitizer_test.m": "fea7ab6042061f775e1e8f379c012c57e0d997c8744ff511996074f831ae0a8b",
++    "Tests/card_flow_v310.test.cjs": "0148a856698faa288ba36f3a2a764fb8551c281685e411897084961946090e68",
++    "Tests/card_flow_v39.test.cjs": "326d576fe7cf92a1caf6e1663253f89ed875c87d97beed3b12f3d04debe77885",
++    "Tests/card_hand_badges.test.cjs": "7b5e2fb5b4f4cab74e234200728d594b08d362d9500a7dd24406bdcde4308de9",
++    "Tests/card_hand_counts.test.cjs": "e74e4eed81f9dfaf2693a3a787e067ecbd3b8a3598efcf4a7bfcc6be6ca5f395",
++    "Tests/card_hints.test.cjs": "2082b8ca119e59c8bae53d2ecf16238084050a95fa290b5519295f4bfc38d121",
++    "Tests/card_hints_bridge.test.cjs": "3723d5d43c6ed39a0496aa94749282c5c519701085ea0225eca76e79d0488e51",
++    "Tests/card_hints_bridge_test.m": "b1fc38d1f7c80c9a198190ff65be27527535e84e2b90b9cabadc3e7df2d04802",
++    "Tests/card_hints_enabled_test.m": "3f66dcd3615feb877c7c7eb9fc26ec89d62a96fc9e2c6feeb35405735f1bafe4",
++    "Tests/card_hints_fixture.cjs": "9207d33142c863003f4f28bc8fc184b8daa83e113a2aad7bc1ef87f289bcbcb1",
++    "Tests/card_investigation_bridge.test.cjs": "e41478ec7b089133e62b0454c03a36264fce43560887cd8160135adaf8f51832",
++    "Tests/card_investigation_sanitizer_test.m": "b016a45c53f1d00efb7f9119b7c4b2968ee261c98ee3e127de8420364073807e",
++    "Tests/card_live_test.m": "da4530d8f0e92a14b55198d9ac164e0c495a35b5b4452725ceee0df1988498f2",
++    "Tests/card_probe.test.cjs": "be75b6121eeeb769b5d54d6e3b927ac26b8ef8aa422ad4a9307684dc06d94e56",
++    "Tests/card_root.test.cjs": "53092414d4b66db30750f63f04a8d53511e90dec5ac053584cf5360ec280350c",
++    "Tests/card_root_command_test.m": "93dc9fa456a2a8cb415649d2a4c9f534cc1efaa23b511f1f3490a543082cc902",
++    "Tests/card_sampler.test.cjs": "e9493ee89a2f878e9767deca4485b699c23afc5d77705e525553f756696ebfd1",
++    "Tests/card_sampler_fixture.cjs": "b1459024449601904898389efedd7ceef09a1aed21f60f180fba4f64a26d6632",
++    "Tests/card_sampler_integration.test.cjs": "4a24b71ac608edb5959ffccad12b1d132bb34975b1e0436fcd4d59a737bc20b4",
++    "Tests/card_sampler_native_cases.inc": "d8a2097c6cd9a43c0ad4650eda008ecfee5fcfe4c520821f2de6baa530c3ce43",
++    "Tests/card_selected.test.cjs": "6bf7254e0d51a135dc15b0551e6c135e548a2adf2916246caf25c174b329e5b2",
++    "Tests/card_selected_fixture.cjs": "5ed6cac4ed6e0877c5ca6a2e206e9d9d0552eb1398a527a367b00aabc84e755f",
++    "Tests/fixtures/autoplay-board-observed-v25.json": "4cac3a5be1465b87915aeccc0342040451902eaf4cd506687b0b54790bf90065",
++    "Tests/fixtures/autoplay-board-observed-v26.json": "554438bb2b68f20a53138ffbb32b18fdcc95325ca614085eac6884ccd48433e2",
++    "Tests/fixtures/autoplay-board-observed-v29.json": "632b3dbe1e54e8d5feded3857a87be6096a76531f938ab05561dc3431466095e",
++    "Tests/fixtures/autoplay-board-observed-v30.json": "4d6bd1a2db7614cd58ce9b21a9ac4fca241a6caf07e98b8344a262c9bd617a7d",
++    "Tests/fixtures/autoplay-global-counterexample-v31.json": "b4a027e615dc7d53a0911a5f54435ddc071c08605e759a5815adf1cfa30d32dc",
++    "Tests/fixtures/billiard_manifest_baseline_v1047.svga": "dd5e85ab92eb8ce2b6b75464ac9d58e3939335a93163e3f1856d99cc2c69fdbf",
++    "Tests/fixtures/billiards-chain-v317-captured.json": "ae510b7e9136b976421ad6ecf526d5957fc17948489ecd8c92f7e079767e1862",
++    "Tests/fixtures/billiards-v3191-profile-capture.json": "566f227b128d536958a964b9fb659ce86ff79bbe7dcfc6b7fdf434bd24b618c4",
++    "Tests/fixtures/schema2_scene_reference.json": "1d10b4a8a39a02ec45e1c61e70b1a57fcf310e7e8dd60df7005ce07acc6ba7d3",
++    "Tests/fixtures/warehouse-row-observed-v26.json": "f6c62a4cc92d3a4f4ed8c099141b6fba75d6d57fc94fb97942d61f292c7f7adf",
++    "Tests/game_source_exporter_test.m": "0a829833ec27023bf9542d687b5fc0cd6af8ea220151734a04bdc0498875cbb1",
++    "Tests/game_source_io_test.c": "b984b5b34bdf82d15a1ebfeb04a1a0f0810324ec2d389631782fd3be69a00e76",
++    "Tests/game_source_native_path_test.m": "e076933aae7bcdece12dd9955267b95f767986ef6d4f0be94c5a8600d9374d54",
++    "Tests/native_action_policy_test.c": "25bfb485b3982dc9124249f3134636b7fe803fd453d11f091211cc06627afe62",
++    "Tests/new_game_capture_policy_test.c": "221f04445a5ac0dee1a6a93fa0516d5581cca6933f71b30b0d5385f5ed61dc4e",
++    "Tests/return_tool.test.cjs": "3d4eeaceea4e035aa07877360f7a405367f95999b48ef8999ccdfd2467aeaef9",
++    "Tests/scene_codec_test.m": "c5ade125bd405693069add4de8dcdb23a27fe1cfd3f4b9c0275f51583d79417e",
++    "Tests/scene_probe.test.cjs": "90bd393c9526a1b2db2f189295cf6a606e9713ff916f3975b47ef2c544405742",
++    "Tests/test_billiards_probe.lua": "381c0e4dfa803eeca40a7d938b8e5b87269476251c3b9308b2fac1c3bda3d3ab",
++    "Tests/test_billiards_resource_io.c": "de77093ce1109160478c4624082b3d581a4c8db0694614df57fd67dccfb3036d",
++    "Tests/test_capture_codec.py": "2920f1e5362a6d4a11a4136d9a81c918dc99e35787b91ae8d5133fd55106e8d7",
++    "Tests/test_card_activation_policy.py": "d3f6d924a0c9ef72b61d23fa185924ab09b204f2df970d14484411c3d07ead56",
++    "Tests/test_card_disabled_build.py": "427b4a134762c4bb0f6651d64541cfdc435ea58bfd8296bd5c9339206d599d87",
++    "Tests/test_card_early_analysis.py": "e1bfa9def363effe4d8e1ec17b274f263836a7a7d3490bfa74c9cfc2a4388fcc",
++    "Tests/test_objc_property_names.py": "6a2e1206b514b59ca68886c33bfb6688a10923a389c19cf98dc5bab7968ac03c",
++    "Tests/test_packaging.py": "25b6687263c965c22a6e712b57abc7cf03fa2ff10549a5b836a5dcf16ad2db0b",
++    "Tests/warehouse_tool.test.cjs": "e468c790ac8e55364a4f945b24442f9be96c78f0be9ca9bcf13c90fc6788b96d",
++    "Tests/web_probe_sanitizer_test.m": "195994e6ca30c04f020683e75e1e5e92071ff56f0161754c6abc2ddb36b71662",
++    "Tests/xray_overlay.test.cjs": "3a4df95b2dceafd865c2566e75c95f51ca537bfb6c2e959badcd5349f50a4c9e",
++    "Validation/V2-validation.json": "686cd38986307b1902fedfb9cd7cee7aa3488d49ad357b2b2a62ee893bdd5929",
++    "Validation/V2_1-validation.json": "e384cb2f2227cab8c817860b01f10cb743a01575de0d67cce35e46a3c52108fa",
++    "Validation/V2_2-validation.json": "b50aad814a3985ca425cfe075d6d5a304df7799d06d8273cb46b029633b7cd04",
++    "Validation/V2_3-validation.json": "ccbb20092b90a9cc65a4ce0b41494be9178250bcc936e47a8e6b54df463360b2",
++    "Validation/V2_4-validation.json": "72caf466276c6381bbd8c72d1a0ad9352262fa76a3119c4c49e0d5b7d250ebf7",
++    "Validation/V2_5-validation.json": "ed60227d5842a1e96d2281af38c153947fcd078ef57adc16dafa34064daaa409",
++    "Validation/V2_6-validation.json": "9dd63c335637983feb60ed52ef3430bdd7b5c6a7fc8b86ef3c51a4ed4670a8b7",
++    "Validation/V2_7-validation.json": "7d5b7b3c3172886717a2e25994c2ea08523c09e6583befb02f4b941692b1d22f",
++    "Validation/V2_8-validation.json": "04ea58489b7fb49c6b7e1330f6aac9f951f13ea59a598d8875ee7ad6528691bd",
++    "Validation/V2_8_1-validation.json": "2c14cb28ecd725ac871dbd29ad1d6393e2fe9d7303fd9a289546b505e57a28cd",
++    "Validation/V2_9-validation.json": "e580315d56ac5d38e25df122a9560f57f42c644b002c5a3d10e5cba9f3996cbc",
++    "Validation/V3_0-validation.json": "ae370715da57b3d18ff0c570a88efbfc050b86a883f604e3cadb9f57e4ceaf5b",
++    "Validation/V3_1-validation.json": "fb0795cca3ad100396c26aa3bae2300c45f3a9f01a17fd20b002c73848848b39",
++    "Validation/V3_10-validation.json": "7b006da4ad2855a6e18e5d90c43bdbb0b1970a577b45af4908a8af88604c0116",
++    "Validation/V3_11-validation.json": "babd04a8c630199dfd1df175d4fabf038c3bd5b581539cbe5eea173f38685804",
++    "Validation/V3_12-validation.json": "58d2668c885c10cafca67e26bfc5d20fa6af7718c5470e963d434c37449a092f",
++    "Validation/V3_13-test-results.txt": "06fc1c732675b718cf19b97ccc0eb9d42f75bf40f750955c23af1fcdd5388b45",
++    "Validation/V3_13-validation.json": "e9d02cffeeb6ce23dc528efb189997387c782befb5e61dc9e492f417e19e1c72",
++    "Validation/V3_14-test-results.txt": "45c6a634600d5af662f8fa6cad494c2ade52ee767787037c8a514ce253d2be93",
++    "Validation/V3_14-validation.json": "59d14d9ba8c018f2354c352d4cdc6f7b06aca7803b822b6870f530811cc6f1a4",
++    "Validation/V3_15-test-results.txt": "f637d3a04915227cca7cc64bb6fa59c3c2d6ec1e221f45a65b54287e2c79fd8f",
++    "Validation/V3_15-validation.json": "d5a0c5bd37d059676873fb524ff107e5595a75c3f5ba1693776d929aea361a93",
++    "Validation/V3_15_1-test-results.txt": "5250efbf1983588678c783f419161408d10e64e1566752941aa82ec02753865c",
++    "Validation/V3_15_1-validation.json": "8a72f3f76ce2166b81044a901f25f428b792adebdca2baa5e82321bf6e66a17b",
++    "Validation/V3_16-test-results.txt": "388ffad3ee38957f5883e793b8c4b7d5d0cbab8c9db88eb5b96f033a6bd39ee3",
++    "Validation/V3_16-validation.json": "53aded54cfaefd35d2c4563729cc83f76b76c81da6443b8d3d4fde6f7f560c77",
++    "Validation/V3_17-test-results.txt": "c2f3673954214d148fc5b738aaefc6567a9f9e5216773b8ceee89f4bdec06190",
++    "Validation/V3_17-validation.json": "71f65d1682d3047642749aec904870609e66986024b799bb824066faf453c529",
++    "Validation/V3_18-test-results.txt": "c69ae16f786235b46e50142ea1d51e9e371b1c7fea463b31783bfbd87d22ad67",
++    "Validation/V3_18-validation.json": "285992a07bc182a6a6c7022023cbce51913954f26385e73f13f6c88cb024e23a",
++    "Validation/V3_18_1-test-results.txt": "e8a67dc7d0a406e83ab8ae07b0b18738cda845b84bf0ef9ce1a100118d1de005",
++    "Validation/V3_18_1-validation.json": "38f5d0b98066a72907a6ddae44daf24cb590af6867d2f71030a48902bd663b28",
++    "Validation/V3_18_1-viewport-regression.json": "c2f9c8bf34e77add062727e39758f696378ff1addf05c4230e59e5df192f1338",
++    "Validation/V3_19-test-results.txt": "53fae3c0662104a4cbfd4cf5e4b0a7f947ca52df7cc96814f1c739bffa0e239e",
++    "Validation/V3_19-validation.json": "ff7b2d3bfcd2b56f96defb808938bcc7ca12205fd48625b2ce2f0d60be8496c9",
++    "Validation/V3_19_1-test-results.txt": "5abb336758fd73a6099cde12e55c7af1809bb633a6d2a0921746b8cb3f76aac6",
++    "Validation/V3_19_1-validation.json": "40e4fc31e95885c786cd8567831dcdd9cf9b3c471162edf30a231bfd64f0d07a",
++    "Validation/V3_19_1-viewport-regression.json": "f4a93b83abc06c14e6a1a22908c399f87353fe5da6cf33debeef015157e0c81f",
++    "Validation/V3_19_2-direction-regression.json": "312994cc43e5c40298cf9dafdd36b1e918077a248345c937eaa390c8e5f375a5",
++    "Validation/V3_19_2-validation.json": "a98968416fc641f0c2d72ca34251d209732e276e30953f6df00c441bf59587d0",
++    "Validation/V3_19_3-packaging-regression.json": "0628785cfd45696ad429d79ea68dc24118008761413e9a2e07f98df9c80068c0",
++    "Validation/V3_19_3-validation.json": "c4145ad0b66b2221ece325b24669ba2525591f67dbe568f77b103875a54ba70b",
++    "Validation/V3_19_4-validation.json": "05f426b9d8562f20305d5e5e8e137fa2a07a97fbbc545fc27a97d6eb58114ea0",
++    "Validation/V3_19_5-validation.json": "9ee435f347c3fe7e2522b86dc3a878978279d60eb26326288f6f571f613d1f3a",
++    "Validation/V3_19_6-validation.json": "d6d83a9177476aaf60bedbfd911d9a1ebf9a7c69ef96697e03144bb2294819de",
++    "Validation/V3_19_7-validation.json": "169d71cc80e106963e0a33e15fa3417a2a84c7121f3475af13ba94fa6f46dadc",
++    "Validation/V3_2-validation.json": "bcc1300d789dd6338016c547c28a833fd6b20adbe77b65d32a71db02f4146157",
++    "Validation/V3_3-validation.json": "120ea948059c937aef64c8ab953a1e9e7bf4ddc37bdaadb04c717c678039cd27",
++    "Validation/V3_3_1-validation.json": "1c5d1892b009787456fda2d4a11850607102ef369ac4c3e7caf210d2fdc6ac33",
++    "Validation/V3_4-validation.json": "fdf3374f7b0329209d38d672ba5fed0ae3900161da770f26e434d6e0261e16f5",
++    "Validation/V3_5-validation.json": "af78adcaa6e6aec8b94040a27fd04a1b8af9d131137365db874ef41871684440",
++    "Validation/V3_5_1-validation.json": "9485062315706186585b7169f165e9ebb60e25b44ef7780b001dabbd76284ce3",
++    "Validation/V3_6-validation.json": "a81d2721d72786110a5f83f9eb54acf2d3f2de23e282a6952961450c71e31196",
++    "Validation/V3_7-validation.json": "76c06b48949a2d986c0067c17d8c511bc586ad1d511e5df99ee529ed0386be70",
++    "Validation/V3_8-validation.json": "9780c3c929a984ecadc1023d73b27ba697c06286609443b40db6f5c9e9ffbb5b",
++    "Validation/V3_9-validation.json": "c23901875441c9e4eb2721460e4c1f5c862c4407bbbb85034b3fc153910b3343",
++    "config/base_identity.json": "1488346cce95df0d4800f3d70596503808bb4b45d77dc8fdf94bf7e6417bc22c",
++    "scripts/analyze_card_early.py": "72507b900eba767d532e4801db4193333fbedc1d7985a1a297aac33d77382039",
++    "scripts/build_framework.sh": "85321d4271219dc1f50408b44d1d7b37b35c00712dcc74f65747326bf911957d",
++    "scripts/decode_capture.py": "b9df43893870f8e16bac3ecc632114dab227542925bb75d9f3346b1bb677ddfb",
++    "scripts/download_base.py": "48691d7d10eacb49e41e2ade8ac42567516320e6361be98ccf28fdf8cb638733",
++    "scripts/integrate_ipa.py": "d2d8678b5cde7e79765d82e6b4bd2fdb0fef5c374b554c42ca6d4c253d1fd469",
++    "scripts/macho.py": "609921c278b144152ed3c944a7bc50929e1a85aa7fab2c025bb882f0469e410c",
++    "scripts/prepare_lua_test_library.py": "c7b21bf4f812c1c62b67af8be3fabdf1c88b72f2280fb0f3b8cd1302500b4147",
++    "scripts/test_autoplay_bridge.sh": "d3931c1b80d4ac9df2ef574e998374cf0d479fd5df9ef00032b69bd1bf2b39cf",
++    "scripts/test_billiards_live_policy.sh": "5b5945e9927c25619ea94a085ff6c7982079ae535f22c6f6bd76390d83984bc6",
++    "scripts/test_billiards_live_snapshot.sh": "dc8154f0d991d9bfd30c4efb526dd9954664b8649f49c3333732df90b029695f",
++    "scripts/test_billiards_lua_boundary.py": "264c8a72d0aa1e92e5d8b6a15b155654984f29c6f38f02903266e7d1f329d158",
++    "scripts/test_billiards_numeric_policy.sh": "ebeb519bfe1fd23ae15898940bee9c019ecaa1d8b1d7a5f50e609b5d09be2248",
++    "scripts/test_billiards_probe.py": "c8d4fa955c4fb7b9af9a75a0225ffd04a1ebbb93f71bda9139a31fe6060861c3",
++    "scripts/test_billiards_resource_foundation.sh": "b8b469a9e381c99aab25e851e6ef333c2fc15b3091244f0bb76b4938edb229e9",
++    "scripts/test_billiards_resource_io.sh": "278d265d8b366399bcb353a8fd1f26abe7183bc0307a482175ee0b516752a896",
++    "scripts/test_card_disabled.sh": "139e94daf6ae4c7450aec088df10949d42d988afbaaabf4da2cce245f0b12247",
++    "scripts/test_card_early.sh": "ab3756929a4aa152b72cb867a43609ae50b397143c5dbd1b464e157ebfe51b22",
++    "scripts/test_card_flow.sh": "5553fb341de3ff343c3163ff47931cb5a967fc87a0d8dd054c9d070dcb8d9fdd",
++    "scripts/test_card_hints_bridge.sh": "d6d18a27935d9be245305ef3478db8d2e93d0c8472f058ab7b7905c7aac9e6ed",
++    "scripts/test_card_investigation.sh": "8a31854145c1b48522bcd9f26771f332e643a50ecc4147c7fdd0306bb5000430",
++    "scripts/test_card_live.sh": "2ee32e329d67c7d0af6d0fa459d265e8f95294337daaa6eac98502ecca6398a2",
++    "scripts/test_game_source_export.sh": "e6993a4834e3a3d1ba4d86739b2532a569c929fb6910321b9eccadd3082b950c",
++    "scripts/test_game_source_foundation.sh": "e1261d8b1d6f70e492e1f0c3524dff10b0ca2b08a3c36bb21fcdd407a628634a",
++    "scripts/test_native_action_policy.sh": "6837c1afed4a37ca70efb7fb3cb8103e6d7343659bfa810ac475a47ed1f16b83",
++    "scripts/test_new_game_capture.sh": "7c2d64c23510ddca8492722eb161cb1c6eefe16c469e9efd222d4ca705f9e1eb",
++    "scripts/test_scene_codec.sh": "b191e7e8c56614d78e56b0185b0ceecc5eb12d72a0d2cf49b88e29f9ba9af594",
++    "scripts/test_web_probe.sh": "345390afca09f32ec701ce3feb14ef75582dc665743ed332135b08c46b5a10b3"
++  }
++}
+--- a/scripts/build_framework.sh
++++ b/scripts/build_framework.sh
+@@ -43,7 +43,7 @@
+   -Wall -Wextra -Werror=implicit-function-declaration \
+   -I Sources/SDKtools -install_name '@rpath/SDKtools.framework/SDKtools' \
+   -Wl,-rpath,@loader_path/Frameworks -Wl,-headerpad_max_install_names \
+-  -Wl,-no_adhoc_codesign -current_version 3.19.7 -compatibility_version 1.0.0 \
++  -Wl,-no_adhoc_codesign -current_version 3.19.8 -compatibility_version 1.0.0 \
+   -framework Foundation -framework CoreFoundation -framework UIKit -framework WebKit -framework ReplayKit \
+   -framework QuartzCore \
+   "${sources[@]}" -o "$framework/SDKtools"
+--- a/scripts/integrate_ipa.py
++++ b/scripts/integrate_ipa.py
+@@ -132,7 +132,7 @@
+     require('SDKtools' in files and 'Info.plist' in files, 'Framework incompleto.')
+     info = plistlib.loads(files['Info.plist'])
+     require(info.get('CFBundleExecutable') == 'SDKtools' and info.get('CFBundlePackageType') == 'FMWK' and info.get('CFBundleSupportedPlatforms') == ['iPhoneOS'] and info.get('MinimumOSVersion') == '15.0', 'Info.plist do framework incompatível.')
+-    require(info.get('CFBundleShortVersionString') == '3.19.7' and info.get('CFBundleVersion') == '43', 'Este pacote exige SDKtools 3.19.7, build 43. Framework de outra versão recusado.')
++    require(info.get('CFBundleShortVersionString') == '3.19.8' and info.get('CFBundleVersion') == '44', 'Este pacote exige SDKtools 3.19.8, build 44. Framework de outra versão recusado.')
+     for resource, limit in TOOL_RESOURCE_LIMITS.items():
+         candidates = [name for name in (resource, 'Resources/' + resource) if name in files]
+         require(len(candidates) == 1, 'Recurso obrigatório ausente ou duplicado: ' + resource)
