@@ -1,62 +1,37 @@
-# SDKtools 3.19.8 / build 44 — Autoplay: missão primeiro
+# SDKtools 3.19.9 / build 45 — Teste experimental da trava do armazém
 
-Base: 3.19.7; WePlay US 6.6.2/build 132. Mudança funcional apenas no Alpaca. Recursos de Cartas e Bilhar preservados.
+Base: 3.19.8 (prioridade de missão preservada). WePlay US 6.6.2/build132. Cartas e Bilhar preservados. **Esta versão testa uma hipótese; não oferece desbloqueio permanente nem uso ilimitado.**
 
-## O que mudou
+## Usar no iPhone
 
-- Identifica a missão pelo `GameStore.task_info`: `target_block_type`, `current_num`, `total_num`, com vínculo verificado ao Game/Task da cena atual.
-- Prefere um **trio do tipo da missão**, mesmo havendo um par normal pronto. Também procura rotas que liberem o tipo-alvo por cartas bloqueadoras.
-- Prioridade não significa clique arbitrário: toda rota precisa terminar em um trio, respeitar máscara/travas e caber nos sete slots. Não passa por cima das regras do jogo.
-- Sem missão válida, com missão já concluída ou sem rota-alvo comprovada no limite de busca, usa o autoplay normal. Se a busca prioritária não tiver encontrado nem um trio normal, o algoritmo original ganha seu próprio orçamento de busca.
-- Reavalia quando missão/progresso muda e a cada trio concluído. Uma mudança cancela ação preparada, mas **não reenvia** ação já enviada e ainda incerta.
-- Menu/relatório distinguem missão identificada, prioridade, fallback normal e objetivo atingido. Progresso é o valor lido do jogo, não uma contagem inventada pelo SDK.
+1. Assine/instale o IPA. Entre no Crazy Alpaca **em time**, antes de iniciar o autoplay. Espere qualquer jogada pendente terminar.
+2. Deixe seu próprio slot **vazio e bloqueado**. No menu Alpaca, toque **Testar trava (1 tentativa)**.
+3. O SDK escreve zero temporariamente no campo local de trava, executa a abertura original e restaura a trava antes de devolver o controle. Se o seletor abriu, **escolha UMA carta**. Essa escolha pode colocar uma carta real no armazém e alterar sua partida.
+4. Reabra o menu e toque **Ver resultado do teste**. Repita apenas essa consulta se a resposta/movimentação ainda não chegou; ela não reenvia o pedido.
+5. Exporte o relatório normal do SDKtools e envie o JSON. O resultado fica em `warehouseLockTest.diagnostic` e nos últimos16registros de `warehouseLockTest.events`.
 
-## Recompensas e poderes
+O botão **Meu armazém** normal continua exigindo slot livre/destravado. O botão experimental é separado. O autoplay é pausado e não é retomado automaticamente. Encerre o teste pelo botão próprio; no resultado incerto de um pedido enviado, não há liberação para nova tentativa automática. Para outro teste independente, reinicie o aplicativo.
 
-O próprio jogo entrega recompensas pelo evento `UpdateCommonTask` (`reward_prop`) e atualiza o inventário. O autoplay não falsifica progresso, não reivindica recompensas por requisição própria, não compra e não gasta poderes automaticamente. Apenas prioriza jogadas normais para avançar a missão. O servidor continua sendo a autoridade.
+## Como interpretar
 
-A animação pode manter a missão antiga na tela enquanto o Store já contém a nova: a leitura usa o Store, não o texto/ícone animado. Janelas de recompensa continuam pausando ações conforme as guardas existentes.
+- `armed`: seletor original aberto; o teste ainda não observou pedido de colocação.
+- `submitted`: foi observado o envelope original de uma escolha manual, sem alterar bytes/argumentos.
+- `accepted`, `serverCode=200`: resposta de protocolo correspondente ao pedido observado. **Não prova por si só mudança do slot.**
+- `slotEffectConfirmed=true`: além do200, a mesma carta apareceu no próprio slot, observada coerentemente no Store/componente. **Ainda não prova desbloqueio após retirar essa carta nem uso ilimitado.**
+- `rejected`: o servidor devolveu um código diferente de200. Isso não identifica sozinho a causa da recusa.
+- `uncertain`: envio/retorno/restauração não comprovados. Não repetir o pedido; confira ou reabra a partida.
+- `expired`: expirou a seleção sem pedido observado.
 
-## Usar e conferir no iPhone
+O lease de seleção é30s; após pedido observado,15s para resposta. Não há envio automático, pacote fabricado, chamada de debug, alteração de saldo/poderes, repetição do pedido ou mudança no slot de outro jogador. O usuário ainda pode fazer ações normais no jogo; elas não são automaticamente atribuídas ao teste.
 
-1. Entre no Crazy Alpaca e inicie o autoplay pelo botão já existente.
-2. Com missão disponível, confira **missão primeiro X/Y** no status. O tipo é ligado ao `Block.blockInfo.type`, não adivinhado pelo desenho.
-3. Se não houver caminho-alvo, confira **missão sem rota: modo normal**. A busca é limitada; essa frase não prova impossibilidade global.
-4. Após um trio, confira a missão/progresso do próprio jogo e o recebimento da recompensa. Não foi feita validação física dessa versão no iPhone.
-5. Em uma captura SDKtools, consulte `autoplay.planning.mission`/diagnóstico de planejamento: `status`, `targetType`, `current`, `total`. Não há IDs de jogador ou conteúdo arbitrário nessa telemetria.
+## O que é escrito e restaurado
 
-## Limites da validação
+Somente o descritor de dados de `commonBlock.lock_state` do próprio slot vazio é sobrescrito durante a chamada de abertura. Não são zeradas travas de cartas especiais. A restauração atua no objeto original, sem substituir um objeto novo recebido. Falhas de restauração são reportadas como incertas, nunca como sucesso.
 
-Contrato recuperado de uma exportação histórica do Alpaca, com hashes verificados; identidade byte a byte do módulo atualmente carregado no iPhone ainda não foi demonstrada. Testes locais cobrem estratégia, bloqueadores, fallback, troca de missão, ação pendente e alertas; um oráculo independente enumera 120 tabuleiros sintéticos pequenos. Isso não garante vitória ou recompensa em todos os modos.
+Os observadores são temporários na instância de Socket, não no protótipo global. A escolha e o send originais preservam this/argumentos/retorno/exceções/Promise. A inspeção lê somente o cabeçalho da resposta correlacionada; corpos, UID/rid, segredo, IDs de carta e de pacote não são exportados. Eventos sintéticos de página não são aceitos como retorno de rede.
 
-## Compilar
+## Compilar e limites
 
-O ZIP `SDKtools_Fontes.zip` e o workflow `compilar.yml` desta entrega formam um par por tamanho/SHA-256. Use o workflow **Compilar SDKtools US**, `base_source=release`, `release_tag=base-us-6.6.2`. Produto: `WePlay_US_6.6.2_SDKtools_v3_19_8_unsigned.ipa`; requer assinatura e teste no aparelho.
+ZIP `SDKtools_Fontes.zip` e workflow `compilar.yml` são um par por SHA-256/tamanho. Workflow Compilar SDKtools US, `base_source=release`, `release_tag=base-us-6.6.2`. Saída: `WePlay_US_6.6.2_SDKtools_v3_19_9_unsigned.ipa`. Requer assinatura.
 
-## Cartas preservado da 3.19.7
-
-
-
-O menu deixa de depender de encontrar/desenhar Card nodes: lê `GameStore.gamers[].cards` diretamente e injeta3observadores temporários: `GameStore.sync`, `GameStore.updatePushMessage` e `Card.setup`. Copia valores permitidos antes da chamada original e só os conserva após a chamada terminar com sucesso. Observações Card.setup exigem componente e mão atuais coerentes. Retorno/exceção/this/argumentos do original preservados, sem repetir chamadas.
-
-Isso captura exposições transitórias que desapareçam entre duas leituras de150ms. O sampler também lê localmente `select_give_card` e `look_over_cards` já recebidos. **Nunca chama `Socket.sync`, send, compra ou habilidade de revelação.** Forçar amostragem é forçar uma leitura local, não uma resposta diferente do servidor.
-
-## Usar no aparelho
-
-1. Abra Ah,minha carta. No menu SDKtools, toque **Injetar / amostrar agora no menu**, antes das compras ou da próxima rodada. Também é instalado junto com os marcadores.
-2. Abra o menu e confira **Inject:3/3hooks**. `sync/setup` devem subir quando o próprio jogo executar esses métodos. `leituras` é atividade do sampler, não quantidade de cartas.
-3. Cada linha mostra `Você` (quando identificável) ou `M1...`: total atual e distribuição `R/Az/Am/V/E/?`. R=rosa/vermelho do jogo; E=especial; ?=não recebida. M é índice do Store, não posição física da mesa.
-4. O botão solicita uma leitura imediatamente; o timer mantém leitura periódica. Não ative captura early simultaneamente: são fluxos separados e ela encerra os marcadores/injeção.
-5. Use **Exportar captura de Cartas** com o modo ativo. Conferir `samplerStatus`, `samplerHooks`, `samplerSyncs`, `samplerSetups`, `samplerHiddenKnown`, `handCounts`. `samplerRetained/Observed` também incluem faces já abertas; não são contagem de novas cores ocultas.
-
-Se houver `sampler_only`, os dados continuam no menu mesmo sem layout reconhecido ou dentro do orçamento visual. Marcadores e etiquetas são opcionais; o censo não depende deles. Anel branco marca uma face ligada ao estado direto/observação validada.
-
-## Limites
-
-Os observadores não ressuscitam eventos anteriores à ativação. Não existe fórmula de ID→cor. Fatos são limitados à rodada/conexão/dono,120s,256entradas, com descarte em transferência/remoção/conflito. Lease600ms e limpeza restauram os métodos.
-
-Se o servidor só envia Back0 e nenhuma etapa local contém a face verdadeira, `?` continua correto. Os novos testes provam captura de valores transitórios SIMULADOS; não provam que esta versão do WePlay revele todos eles. A captura885A anterior permanece sem novas cores de oponentes no replay dos41estados gravados.
-
-## Fluxo anterior (histórico)
-
-Parear SDKtools_Fontes.zip e .github/workflows/compilar.yml. Workflow Compilar SDKtoolsUS, base_source=release, release_tag=base-us-6.6.2. Produto `WePlay_US_6.6.2_SDKtools_v3_19_8_unsigned.ipa`, requer assinatura. Validação visual no iPhone ainda pendente.
+O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
