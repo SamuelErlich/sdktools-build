@@ -635,8 +635,8 @@
          NSString *status = result[@"status"] ?: @"dispatch_uncertain";
          NSString *resultReason = result[@"reason"] ?: @"invalid_result";
 +        NSString *runtimeView = result[@"runtimeWebViewID"], *runtimeDocument = result[@"runtimeContextID"];
-+        NSString *previousDocument = runtimeView ? strongSelf.autoplayRuntimeDocuments[runtimeView] : nil;
-+        if (previousDocument && runtimeDocument && ![previousDocument isEqual:runtimeDocument] &&
++        if (runtimeView && runtimeDocument && strongSelf.autoplayPowerBoundView &&
++            (![strongSelf.autoplayPowerBoundView isEqual:runtimeView] || ![strongSelf.autoplayPowerBoundDocument isEqual:runtimeDocument]) &&
 +            [@[@"opening", @"submitted", @"uncertain"] containsObject:strongSelf.autoplayPowersDiagnostic[@"status"]]) {
 +            // The new JS closure cannot retain the old document's uncertain
 +            // power latch. Stop before its fresh stability cycle can dispatch.
@@ -646,13 +646,20 @@
          if ([@[@"physical_operation_pending", @"cleanup_pending"] containsObject:resultReason]) return;
          BOOL changed = actionAllowed && (![strongSelf.autoplayStatus isEqual:status] || ![strongSelf.autoplayReason isEqual:resultReason]);
          // The result has already crossed the closed-field sanitizer. Persist the
-@@ -238,6 +276,9 @@
+@@ -238,6 +276,16 @@
          NSDictionary *nextPlanning = [result[@"planning"] isKindOfClass:NSDictionary.class] ? result[@"planning"] : @{};
          if (![(strongSelf.autoplayPlanningDiagnostic[@"mission"] ?: @{}) isEqual:(nextPlanning[@"mission"] ?: @{})]) changed = YES;
          strongSelf.autoplayPlanningDiagnostic = nextPlanning;
 +        NSDictionary *powerInfo = [result[@"powers"] isKindOfClass:NSDictionary.class] ? result[@"powers"] : @{};
 +        if (![strongSelf.autoplayPowersDiagnostic isEqual:powerInfo]) changed = YES;
 +        strongSelf.autoplayPowersDiagnostic = powerInfo;
++        if ([@[@"opening", @"submitted", @"uncertain"] containsObject:powerInfo[@"status"]] && !strongSelf.autoplayPowerContextLost) {
++            strongSelf.autoplayPowerBoundView = runtimeView;
++            strongSelf.autoplayPowerBoundDocument = runtimeDocument;
++        } else if (![@[@"opening", @"submitted", @"uncertain"] containsObject:powerInfo[@"status"]]) {
++            strongSelf.autoplayPowerBoundView = nil;
++            strongSelf.autoplayPowerBoundDocument = nil;
++        }
          if ([result[@"xray"] isKindOfClass:NSDictionary.class]) {
              NSDictionary *visual = strongSelf.xrayEnabled ? result[@"xray"] : @{@"status": @"off", @"coveredIcons": @0, @"matchedBorders": @0};
              if (![strongSelf.xrayDiagnostic isEqual:visual]) changed = YES;
@@ -841,7 +848,7 @@
  /// Opens one original power or confirms the currently visible original popup.
 --- a/Sources/SDKtools/STRecorder.m
 +++ b/Sources/SDKtools/STRecorder.m
-@@ -479,6 +479,11 @@
+@@ -479,6 +479,13 @@
  @property (nonatomic) BOOL sourceExportAttempted;
  @property (nonatomic, copy, readwrite) NSDictionary *billiardsResourceExportDiagnostic;
  @property (nonatomic, readwrite) BOOL autoplayEnabled;
@@ -850,10 +857,12 @@
 +@property (nonatomic, readwrite) BOOL powersEnabled;
 +@property (nonatomic, copy) NSDictionary *autoplayPowersDiagnostic;
 +@property (nonatomic) BOOL autoplayPowerContextLost;
++@property (nonatomic, copy) NSString *autoplayPowerBoundView;
++@property (nonatomic, copy) NSString *autoplayPowerBoundDocument;
  @property (nonatomic, readwrite) BOOL xrayEnabled;
  @property (nonatomic) BOOL cardHintsRequested;
  @property (nonatomic, readwrite) BOOL cardHintsBusy;
-@@ -609,6 +614,8 @@
+@@ -609,6 +616,8 @@
          _autoplayStatus = @"paused";
          NSInteger storedDepth = [NSUserDefaults.standardUserDefaults integerForKey:@"SDKtools.xrayDepth"];
          _xrayDepth = storedDepth >= 1 && storedDepth <= 5 ? storedDepth : 1;
@@ -862,7 +871,7 @@
          _xrayDiagnostic = @{@"status": @"off", @"coveredIcons": @0, @"matchedBorders": @0};
          _autoplayPlanningDiagnostic = @{};
          _warehouseTestDiagnostic = @{}; _warehouseTestEvents = [NSMutableArray array];
-@@ -1390,7 +1397,7 @@
+@@ -1390,7 +1399,7 @@
      }
      NSTimeInterval duration = self.startedAt > 0 ? (self.isRecording ? STNow() : self.stoppedAt) - self.startedAt : 0;
      NSDictionary *report = @{
@@ -871,7 +880,7 @@
          @"moduleAvailability": @{@"alpaca": @YES, @"cards": (ST_CARD_GAME_FEATURE_ENABLED ? @YES : @NO),
              @"cardsStatus": ST_CARD_GAME_FEATURE_ENABLED ? @"available" : @"paused_by_owner", @"billiardsIdentified": @NO,
              @"billiardsResourceExportAvailable": @YES, @"billiardsPredictionAvailable": @NO},
-@@ -1478,7 +1485,9 @@
+@@ -1478,7 +1487,9 @@
              @"nativeGate": STLastActionGateDiagnostics ?: @{}, @"temporaryNativeBlocksRetry": @YES,
              @"eventsClock": @"processElapsedMs_since_recorder_initialization",
              @"countingScope": @"confirmed_moves_observed_by_runtime_in_this_process",
@@ -1449,7 +1458,7 @@
 +    "Sources/SDKtools/SDKtools.h": "a6af41ffeab4c0810678ed42d77ccca77516ae3d8170718ea43ed1fe4021a440",
 +    "Sources/SDKtools/SDKtools.m": "1b14423369b089fc5ede0618e0617e8a1800ea55b90f77cbd8361f542fd85072",
 +    "Sources/SDKtools/STAutoplayBridge.inc": "47b29b0b2fc7517a398ec8a561d144ad0ec0964eb7e9ef969b263e1743713528",
-+    "Sources/SDKtools/STAutoplayRecorder.inc": "5339a8b693cb12a19e3f2aa79bf4092e7067c22cc40bac47cf23790671072a5a",
++    "Sources/SDKtools/STAutoplayRecorder.inc": "f72c698a14e7dffb3c602f85cbcd8069dddb3271213006dba07e37e094ebed3d",
 +    "Sources/SDKtools/STAutoplaySanitizer.inc": "ffd1f48eab95eaa072dfcdd5746e0f44d1d1c6d18f8af02d4d12eeecfe8bdbf3",
 +    "Sources/SDKtools/STBilliardsCaptureReport.h": "e36a3e7e40bf9410b4609356e500af18162b47897ed840266fbbdc2fa855fec3",
 +    "Sources/SDKtools/STBilliardsCaptureReport.m": "c468c6ac87ad4f659694559bf46489ad2828211d1d47f5ae2e18a82e07106790",
@@ -1496,7 +1505,7 @@
 +    "Sources/SDKtools/STOverlay.m": "ae204b56e1447e0c22afab0be897fea61284a79344cdcf64a0650647f74d4783",
 +    "Sources/SDKtools/STPowerSanitizer.inc": "e66e6fd2fe686cfe4c4379acb1c53598fb20558a689ced740ec9ba84b20f9517",
 +    "Sources/SDKtools/STRecorder.h": "d30a5750023995ccd1de2a73c3cddb0c87755b29fa080c31fd99e181968b9a53",
-+    "Sources/SDKtools/STRecorder.m": "1a6369228ba160cc637b127380a1264516756e9c6c9b58c7c4242bea665b2d04",
++    "Sources/SDKtools/STRecorder.m": "839d731689cdb19f8daa6319bbddf31308a973b781ca8cb24fae2e55b4393678",
 +    "Sources/SDKtools/STSceneCodec.h": "bc7e04ea6cd323e38eed86245665eb3575e6e91fcba3e7e702b0a83a428bc245",
 +    "Sources/SDKtools/STSceneCodec.m": "70f8cd02569e800966baa145dd033b7f5560a5af13072100449a68cf774be13d",
 +    "Sources/SDKtools/STWarehouseBridge.inc": "d211631cc490aabf4b3dcec3bc7ea70e166bc474e473f488f76b64b01a16b453",
