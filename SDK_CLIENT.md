@@ -1,8 +1,10 @@
-# SDK Client 3.23.2 — build 52
+# SDK Client 3.23.3 — build 53
 
 Base oficial: main `634e9734c39d1e5ed79b115ae75b0ceba5874332`, SDKtools 3.22.1/build 49. Esta versão atende ao feedback sobre o menu grande, texto cortado e tarjas sobre a partida.
 
-3.23.2 corrige o bloqueio de comandos quando o próprio Bilhar é hospedado em um controlador apresentado pelo app. Menu e runtime usam a mesma verificação: a tela da frente deve conter o jogo, estar estável e receber o toque. Chat, janelas sobrepostas e troca de jogo continuam bloqueando ações. O aviso distingue jogo ausente de bloqueio temporário. Ver `Analysis/V3_23_2-billiards-host.md`.
+3.23.3 redesenha o Raio X: até quatro ícones por card exposto, dois nos cantos superiores e dois nos inferiores. Silhueta preta atrás do ícone e contorno no número substituem placas, fundos e contador sobre o centro. A profundidade agora vai de uma a quatro camadas; uma preferência antiga de cinco é limitada a quatro. Ícones e números se ajustam juntos ao tamanho do card e seguem sua transformação. Ver `Analysis/V3_23_3-xray-corners.md`.
+
+A base 3.23.2 corrige o bloqueio de comandos quando o próprio Bilhar é hospedado em um controlador apresentado pelo app. Menu e runtime usam a mesma verificação: a tela da frente deve conter o jogo, estar estável e receber o toque. Chat, janelas sobrepostas e troca de jogo continuam bloqueando ações. O aviso distingue jogo ausente de bloqueio temporário. Ver `Analysis/V3_23_2-billiards-host.md`.
 
 O popup UIKit tem até **288 × 380 pt (altura limitada também a 82% da área segura)**, com altura ajustada ao conteúdo e à área segura. Exibe uma aba por vez: Alpaca, Cartas ou Bilhar. A aba do jogo identificado recebe destaque laranja; as outras ficam escurecidas e seus comandos permanecem bloqueados. Consultar uma aba não muda a identidade do jogo. Ao trocar de minijogo, a aba correspondente é selecionada automaticamente.
 
