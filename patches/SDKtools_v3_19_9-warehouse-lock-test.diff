@@ -1,6 +1,6 @@
 --- a/Analysis/V3_19_9-warehouse-lock-test.md
 +++ b/Analysis/V3_19_9-warehouse-lock-test.md
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +# Teste de escrita do lock — escopo e evidência
 +
 +O alvo é a barreira local de CommonStoreItem.commonBlock.lock_state recuperada na análise REA `ev_dd6444e1867e31b5754942583b950411648ed71ae31b661765736bcc48a0649c`. Bundle original SHA-256 `cbbf9dec2d3cbaf9595834934147344eca4e7c6c4fe3957b590f5c24660c19e6`. A regra de servidor permanece desconhecida.
@@ -23,9 +23,11 @@
 +## Não demonstrado
 +
 +Aceitação real de uma escolha com slot bloqueado; motivo exato de uma eventual recusa; regra de avanço de lock_state; reuso depois da retirada; desbloqueio permanente; compatibilidade física do fluxo neste iPhone. A versão analisada historicamente pode não ser idêntica ao módulo atualmente carregado.
++
++A observação também fica vinculada ao start_time da rodada, à sala e à instância da conexão (valores somente em memória). Troca de rodada/sala/reconexão invalida a confirmação do slot, mesmo com IDs de carta reutilizados.
 --- a/README.md
 +++ b/README.md
-@@ -1,62 +1,37 @@
+@@ -1,62 +1,39 @@
 -# SDKtools 3.19.8 / build 44 — Autoplay: missão primeiro
 +# SDKtools 3.19.9 / build 45 — Teste experimental da trava do armazém
  
@@ -85,7 +87,8 @@
 +ZIP `SDKtools_Fontes.zip` e workflow `compilar.yml` são um par por SHA-256/tamanho. Workflow Compilar SDKtools US, `base_source=release`, `release_tag=base-us-6.6.2`. Saída: `WePlay_US_6.6.2_SDKtools_v3_19_9_unsigned.ipa`. Requer assinatura.
  
 -## Cartas preservado da 3.19.7
--
++O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
+ 
 -
 -
 -O menu deixa de depender de encontrar/desenhar Card nodes: lê `GameStore.gamers[].cards` diretamente e injeta3observadores temporários: `GameStore.sync`, `GameStore.updatePushMessage` e `Card.setup`. Copia valores permitidos antes da chamada original e só os conserva após a chamada terminar com sucesso. Observações Card.setup exigem componente e mão atuais coerentes. Retorno/exceção/this/argumentos do original preservados, sem repetir chamadas.
@@ -111,7 +114,7 @@
 -## Fluxo anterior (histórico)
 -
 -Parear SDKtools_Fontes.zip e .github/workflows/compilar.yml. Workflow Compilar SDKtoolsUS, base_source=release, release_tag=base-us-6.6.2. Produto `WePlay_US_6.6.2_SDKtools_v3_19_8_unsigned.ipa`, requer assinatura. Validação visual no iPhone ainda pendente.
-+O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
++A observação também fica vinculada ao start_time da rodada, à sala e à instância da conexão (valores somente em memória). Troca de rodada/sala/reconexão invalida a confirmação do slot, mesmo com IDs de carta reutilizados.
 --- a/Resources/Info.plist
 +++ b/Resources/Info.plist
 @@ -15,13 +15,13 @@
@@ -132,7 +135,7 @@
  	<key>MinimumOSVersion</key>
 --- a/Resources/warehouse_test.js
 +++ b/Resources/warehouse_test.js
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,167 @@
 +/* SDKtools 3.19.9: explicit ONE-ATTEMPT own-slot lock experiment.
 + * The lock is zero only during the original warehouse-opening callback and
 + * restored before the user selects a card. No forged packets or direct sends.
@@ -178,13 +181,15 @@
 +      if(!bound(item,'CommonStoreItem')||own(item,'commonStore')!==store||item.node!==slots[index])fail('owner_unavailable');
 +      var loader=own(window,'__require');if(typeof loader!=='function')fail('module_unavailable');
 +      var gs=own(loader('GameStore'),'default'),socket=own(loader('Socket'),'default');
++      var round=own(gs,'start_time'),rid=own(socket,'rid'),currentWS=own(socket,'socket');
++      if(!((int(round,1,9007199254740991))||(typeof round==='string'&&/^[1-9][0-9]{0,15}$/.test(round))) || !((typeof rid==='string'&&rid.length>0&&rid.length<=128)||int(rid,1,9007199254740991)))fail('round_unavailable');
 +      if(own(gs,'isWatcher')!==false||own(gs,'mode')!==0||own(gs,'state')!==2)fail('unsupported_mode');
 +      if(own(gs,'isHotTiming')!==false||own(gs,'isUsingPenetrateProp')!==false)fail('external_mode_active');
 +      var rows=own(gs,'common_blocks'),row=own(item,'commonBlock');
 +      if(!Array.isArray(rows)||rows.length<2||rows.length>3||rows[index]!==row||!object(row))fail('awaiting_setup');
 +      var lock=own(row,'lock_state'),empty=own(item,'isEmpty'),card=own(row,'block'),cardID=own(card,'id');
 +      if(!int(lock,0,3)||typeof empty!=='boolean'||empty!==(card==null||cardID===''))fail('invalid_slot_state');
-+      return {cc:cc,root:root,layer:layer,store:store,item:item,row:row,gs:gs,socket:socket,index:index,lock:lock,empty:empty,cardID:cardID,records:records};
++      return {ws:currentWS,round:round,rid:rid,cc:cc,root:root,layer:layer,store:store,item:item,row:row,gs:gs,socket:socket,index:index,lock:lock,empty:empty,cardID:cardID,records:records};
 +    }catch(_){return {error:reject};}
 +  }
 +  function shadow(owner,key,wrapped){
@@ -194,8 +199,9 @@
 +    Object.defineProperty(owner,key,before?Object.assign({},before,{value:wrapped}):{value:wrapped,configurable:true,writable:true,enumerable:false});
 +    return {base:base,undo:function(){var now=Object.getOwnPropertyDescriptor(owner,key);if(!now||now.value!==wrapped)return false;if(before)Object.defineProperty(owner,key,before);else delete owner[key];return true;}};
 +  }
++  function sameContext(s,j){return !s.error&&s.root===j.root&&s.store===j.store&&s.gs===j.gs&&s.socket===j.socket&&s.ws===j.ws&&s.round===j.round&&s.rid===j.rid;}
 +  function closeSelection(j){
-+    try {var s=snapshot();if(!s.error&&s.root===j.root&&s.store===j.store&&j.selectionOpened&&own(s.gs,'isAddingCommonBlock')===true&&s.store.coverNode.active===true)j.close.call(s.store);}catch(_){}
++    try {var s=snapshot();if(sameContext(s,j)&&j.selectionOpened&&own(s.gs,'isAddingCommonBlock')===true&&s.store.coverNode.active===true)j.close.call(s.store);}catch(_){}
 +  }
 +  function clean(j,close){
 +    if(j.timer!==null){clearTimeout(j.timer);j.timer=null;}
@@ -208,7 +214,7 @@
 +  function outcome(){
 +    if(!job)return {version:1,command:'warehouse_test',status:'idle',reason:'not_armed',active:false,localWriteApplied:false,localRestored:true,hooksRestored:true,requestObserved:false,responseObserved:false,slotEffectConfirmed:false,testedWhileLocked:false,attemptCount:0};
 +    var j=job,s=snapshot(),effect=false;
-+    if(!s.error&&s.root===j.root&&s.store===j.store){j.afterLock=s.lock;effect=j.status==='accepted'&&j.serverCode===200&&j.testedWhileLocked&&typeof j.chosenID==='string'&&s.cardID===j.chosenID&&!s.empty;}
++    if(sameContext(s,j)){j.afterLock=s.lock;effect=j.status==='accepted'&&j.serverCode===200&&j.testedWhileLocked&&typeof j.chosenID==='string'&&s.cardID===j.chosenID&&!s.empty;}
 +    var r={version:1,command:'warehouse_test',status:j.status,reason:j.reason,active:j.active,localWriteApplied:j.localWriteApplied,localRestored:j.localRestored,hooksRestored:j.hooksRestored,
 +      requestObserved:j.requestObserved,responseObserved:j.serverCode!==null,slotEffectConfirmed:effect,testedWhileLocked:j.testedWhileLocked,attemptCount:j.attemptCount,beforeLock:j.beforeLock};
 +    if(int(j.afterLock,0,3))r.afterLock=j.afterLock;if(j.serverCode!==null)r.serverCode=j.serverCode;return r;
@@ -231,14 +237,16 @@
 +    var eligible=new Map();
 +    try {cards.forEach(function(c){var info=own(c,'blockInfo'),id=own(info,'id'),state=own(info,'state');
 +      if(!c||c.isValid!==true||!s.records.has(c.node)||s.cc.js.getClassName(c)!=='Block'||typeof id!=='string'||!id||id.length>128||!int(state,0,2)||eligible.has(id))throw Error('card');eligible.set(id,c);});}catch(_){return blocked('cards_unavailable');}
-+    var j={status:'armed',reason:'choose_one_card',active:true,root:s.root,store:s.store,socket:s.socket,ws:ws,close:close,eligible:eligible,
++    var j={status:'armed',reason:'choose_one_card',active:true,round:s.round,rid:s.rid,gs:s.gs,root:s.root,store:s.store,socket:s.socket,ws:ws,close:close,eligible:eligible,
 +      timer:null,listener:null,chooseHook:null,packet:null,chosenID:null,beforeLock:s.lock,afterLock:s.lock,localWriteApplied:false,localRestored:true,hooksRestored:true,
 +      requestObserved:false,testedWhileLocked:false,attemptCount:0,serverCode:null,selectionOpened:false};job=j;
 +    j.listener=function(e){
 +      if(!j.active||!j.requestObserved||e.isTrusted!==true||e.target!==j.ws||!int(j.packet,1,2147483647)||typeof e.data!=='string'||e.data.length>262144)return;
 +      var v;try{v=JSON.parse(e.data);}catch(_){return;}
 +      if(!v||v.packet_id!==j.packet||!int(v.code,0,1000000))return;
-+      j.serverCode=v.code;j.status=j.testedWhileLocked?(v.code===200?'accepted':'rejected'):'uncertain';
++      j.serverCode=v.code;
++      if(!sameContext(snapshot(),j)){clean(j,false);j.status='uncertain';j.reason='context_changed';return;}
++      j.status=j.testedWhileLocked?(v.code===200?'accepted':'rejected'):'uncertain';
 +      j.reason=!j.testedWhileLocked?'not_a_locked_slot_attempt':v.code===200?'server_200':'server_rejected';clean(j,false);
 +    };
 +    var wrapped=function(){
@@ -247,7 +255,7 @@
 +      try{id=own(a,'id');candidate=eligible.get(id);}catch(_){}
 +      // Observe exactly one manual selection; do not change original arguments,
 +      // return value, this, exceptions or Promise/rejection behavior.
-+      if(now.error||now.root!==j.root||now.store!==j.store||!candidate||candidate.isValid!==true||own(own(candidate,'blockInfo'),'id')!==id||own(a,'type')!==0){
++      if(!sameContext(now,j)||!candidate||candidate.isValid!==true||own(own(candidate,'blockInfo'),'id')!==id||own(a,'type')!==0){
 +        clean(j,false);j.status='uncertain';j.reason='request_not_eligible';return choose.apply(this,args);
 +      }
 +      j.attemptCount=1;j.chosenID=id;j.testedWhileLocked=now.empty&&now.lock>0;
@@ -675,7 +683,7 @@
 +        @"cancelled_after_request",@"user_cancelled",@"invalid_command",@"request_not_eligible",@"original_exception",@"outbound_not_observed",@"opening_exception",@"local_restore_failed",
 +        @"selector_not_opened",@"context_unavailable",@"document_unavailable",@"engine_version",@"time_budget",@"invalid_scene",@"scan_limit",@"game_ambiguous",@"store_unavailable",
 +        @"owner_unavailable",@"owner_ambiguous",@"slot_unavailable",@"module_unavailable",@"unsupported_mode",@"external_mode_active",@"awaiting_setup",@"invalid_slot_state",@"own_slot_occupied",
-+        @"already_unlocked",@"selection_already_open",@"observer_unavailable",@"lock_not_writable",@"socket_unavailable",@"cards_unavailable"];
++        @"already_unlocked",@"selection_already_open",@"observer_unavailable",@"lock_not_writable",@"socket_unavailable",@"cards_unavailable",@"context_changed",@"round_unavailable"];
 +    NSMutableDictionary *safe=[@{@"version":@1,@"command":@"warehouse_test",@"status":value[@"status"],
 +        @"reason":[reasons containsObject:value[@"reason"]]?value[@"reason"]:@"unrecognized_reason",@"physicalPending":@NO,@"attemptCount":value[@"attemptCount"]} mutableCopy];
 +    for (NSString *key in flags) safe[key]=value[key];
@@ -863,7 +871,7 @@
                  (framework/resource).unlink()
 --- a/Tests/warehouse_test.test.cjs
 +++ b/Tests/warehouse_test.test.cjs
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,71 @@
 +const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 +const source=fs.readFileSync(path.join(__dirname,'../Resources/warehouse_test.js'),'utf8');
 +function fixture({lock=3,occupied=false,openFailure=false,freezeDuringOpen=false}={}){
@@ -875,10 +883,10 @@
 + const rows=slots.map((_,i)=>({lock_state:i===1?lock:0,block:i===1&&occupied?{id:'stored-private',type:4}:null}));
 + const cs=slots.map((n,i)=>{const c={className:'CommonStoreItem',isValid:true,node:n,commonStore:store,isSelf:i===1,isEmpty:!(i===1&&occupied),commonBlock:rows[i]};n.components.push(c);return c;});
 + const card={className:'Block',isValid:true,node:node(ln),blockInfo:{id:'private-card',type:5,state:0}};card.node.components.push(card);layer.GetCanClickBlocks=()=>[card];
-+ const gs={common_blocks:rows,isWatcher:false,mode:0,state:2,isAddingCommonBlock:false,isHotTiming:false,isUsingPenetrateProp:false};
++ const gs={common_blocks:rows,isWatcher:false,mode:0,state:2,start_time:123456,isAddingCommonBlock:false,isHotTiming:false,isUsingPenetrateProp:false};
 + store.onCoverClick=function(){gs.isAddingCommonBlock=false;store.coverNode.active=false;};
 + const ws={readyState:1,send:function(data){assert.equal(this,ws);sent.push(data);},addEventListener:(n,h)=>{assert.equal(n,'message');listeners.add(h);},removeEventListener:(n,h)=>listeners.delete(h)};
-+ const socket={socket:ws,packetId:41,ChooseCommonBlock:function(arg){assert.equal(this,socket);calls.push([...arguments]);this.socket.send(JSON.stringify({packet_id:this.packetId++,command:'CMD_CHOOSE_COMMON_BLOCK',param:{...arg,uid:'private-uid',rid:'private-room'}}));return promise;}};
++ const socket={socket:ws,rid:123,packetId:41,ChooseCommonBlock:function(arg){assert.equal(this,socket);calls.push([...arguments]);this.socket.send(JSON.stringify({packet_id:this.packetId++,command:'CMD_CHOOSE_COMMON_BLOCK',param:{...arg,uid:'private-uid',rid:'private-room'}}));return promise;}};
 + const originalChoose=socket.ChooseCommonBlock,originalSend=ws.send;
 + const win={cc:{ENGINE_VERSION:'2.4.4',Component:function(){},js:{getClassName:c=>c.className},director:{getScene:()=>root}},__require:name=>({default:name==='GameStore'?gs:socket})};win.top=win;
 + let opens=0;const open=()=>{opens++;assert.equal(rows[1].lock_state,0);if(openFailure)throw Error('open failed');store.coverNode.active=true;gs.isAddingCommonBlock=true;if(freezeDuringOpen)Object.freeze(rows[1]);return {status:'original_event_dispatched'};};
@@ -932,6 +940,9 @@
 + assert.equal(evaluate('poll').status,'idle');const r=evaluate('arm');assert.equal(r.status,'blocked');assert.equal(r.localRestored,true);assert.equal(f.rows[1].lock_state,3);assert.equal(f.sent.length,0);
 + const runtime=f.win.__SDKtools_stocktest_fixture.runtime;evaluate('poll');assert.equal(f.win.__SDKtools_stocktest_fixture.runtime,runtime);assert.equal(Object.getOwnPropertyDescriptor(f.win,'__SDKtools_stocktest_fixture').enumerable,false);
 +});
++
++test('new round cannot reuse card identifiers as proof for the prior attempt',()=>{const f=fixture();f.runtime('arm');f.choose();f.gs.start_time=999999;f.reply(200);f.occupy();const r=f.runtime();assert.equal(r.status,'uncertain');assert.equal(r.reason,'context_changed');assert.equal(r.serverCode,200);assert.equal(r.slotEffectConfirmed,false);});
++test('reconnected socket cannot confirm an old request in the current slot',()=>{const f=fixture();f.runtime('arm');f.choose();f.socket.socket={...f.ws};f.reply(200);f.occupy();const r=f.runtime();assert.equal(r.status,'uncertain');assert.equal(r.slotEffectConfirmed,false);assert.equal(r.hooksRestored,true);});
 --- a/Validation/V3_19_9-validation.json
 +++ b/Validation/V3_19_9-validation.json
 @@ -0,0 +1,408 @@
@@ -948,8 +959,8 @@
 +  },
 +  "scope": "Explicit one-attempt temporary own-slot lock override during original selection opening; restore before manual selection. Observe unmodified original ChooseCommonBlock envelope and matching trusted response header; independent slot-effect confirmation. No automatic requests, retries or permanent-unlock claim. Existing resources byte-preserved.",
 +  "localValidation": {
-+    "javascriptPassed": 659,
-+    "newExperimentTests": 35,
++    "javascriptPassed": 661,
++    "newExperimentTests": 37,
 +    "pythonRun": 94,
 +    "pythonPassed": 90,
 +    "pythonSkipped": 4,
@@ -1081,7 +1092,7 @@
 +    "Analysis/V3_19_6-counts.md": "205d0bd73c20f725791084e0229ad88fc92afc13354596ee967b0d4468546693",
 +    "Analysis/V3_19_7-injected-sampling.md": "cd2bc361782bdd6033f35515cb2d105223fe6c80f9d8eb3d7473eaf28aec1bb2",
 +    "Analysis/V3_19_8-mission-priority.md": "34fc5309099d0a3c1aa945238cb9372ceb5cbaa8d0082cfb72ccde8274ba022d",
-+    "Analysis/V3_19_9-warehouse-lock-test.md": "bc8e6d3aac7e54fee7646d7f6ab2b4f0d5ba685acf43f818e425b8520729d060",
++    "Analysis/V3_19_9-warehouse-lock-test.md": "e66f1224fedd13b54ec1afd33dc7e32b4cae777e180e46a353b52afbebcc1767",
 +    "Analysis/V3_2-autoplay.json": "17b89d0ce231e0cd71c7b3c9c8416207a4d2c20c5f6d5f5c1ed4935dc81ec800",
 +    "Analysis/V3_2-original-rules.json": "6c199ca310e74fd1af1f5398cccabe357296c66c3801b16f377c0bccc178e8ff",
 +    "Analysis/V3_2-original-rules.md": "064a3653845de4ce8c5b455eae367913e0333fafc827eb22a65ee6c4462a1d3c",
@@ -1113,7 +1124,7 @@
 +    "Analysis/WePlay-US-CrazyAlpaca.md": "6bdbb9adc7418880627d409febf7d629a5fa092346cbe5b1a18bdb9714c63040",
 +    "Analysis/replay_hand_counts.cjs": "610e6bb9bab482373168ac8f074120845458249aa35edda17ef309fe65b7017b",
 +    "Analysis/replay_injected_sampler.cjs": "932a8303473206c813914aea29fb819710433edd06b8cbf5dc586fe5fcffa18e",
-+    "README.md": "747ba3c3e55fe6890326e6436eda55ec0bb660191309434b9736ea7d46d53f46",
++    "README.md": "cd279c2a16daf0271739c314c789cc90f949ba4d32288ae1a1631bb2b83d1761",
 +    "Resources/Info.plist": "fd0b9cf9663415d0329471e0fa5f79916ab0b13e58027ada172b253a7602be21",
 +    "Resources/autoplay_planner.js": "77c88457ad9efe6373ce550482b95c1a896c61651291abba52d4325ecc1e8e51",
 +    "Resources/autoplay_tool.js": "2fa2a3d94b246311d039870ed0f91c4a349d1030b9f09f466352f8b317e4ced4",
@@ -1126,7 +1137,7 @@
 +    "Resources/card_sampler.js": "6e680277e8e560ef755eb5bf1109b0ae11e8f1ff45ef5eee605ae4af48c308bd",
 +    "Resources/return_tool.js": "5bf6fa38183dd762bdbf73de17d314aa9c8ec8149a85c66d3e03e657e63b9259",
 +    "Resources/scene_probe.js": "a275168ed6d19720ca7103878e05e5a9c4dc2131fdb935c9efe2a833cd500272",
-+    "Resources/warehouse_test.js": "8dc915077c58da5a2953aa0d0321b1b23b5c8883821c0309333803349a93518c",
++    "Resources/warehouse_test.js": "5b24c2c04246af17cbc1e4c25973995bde0a3cc068348e8571f2e7bb6d8da346",
 +    "Resources/warehouse_tool.js": "2db3b1af7d712144243bc002168c0d6988579106f8de4825a19f07e94f048094",
 +    "Resources/xray_overlay.js": "1268ed2f57e04ef6113cea5764a4cacb8afec5439c23d8990d4f528eeb4afe18",
 +    "Sources/SDKtools/SDKtools.h": "a6af41ffeab4c0810678ed42d77ccca77516ae3d8170718ea43ed1fe4021a440",
@@ -1186,7 +1197,7 @@
 +    "Sources/SDKtools/STWarehouseSanitizer.inc": "1c176dd19628dd314bbe31064912777a6178dae88404a9eb2d673203e436c867",
 +    "Sources/SDKtools/STWarehouseTestBridge.inc": "861e79527b85797fc2d3be845eed2d5603623d980fc67938da41815f86053409",
 +    "Sources/SDKtools/STWarehouseTestRecorder.inc": "7b7e5a8557ba58349b8940b53804d3d79b937cc91bb6fe4455b802e05d25f582",
-+    "Sources/SDKtools/STWarehouseTestSanitizer.inc": "0d285b7d4f7db1fd18171c62d3e2d9601b8287287bf83d88ab92b98612db4c44",
++    "Sources/SDKtools/STWarehouseTestSanitizer.inc": "dae151b0778e2355945c624e87e97ad0aa904367141b5b62bdd453d1cff4e075",
 +    "Sources/SDKtools/STWebProbe.h": "449ef6eb0c2e3d749b855fee488e0314b872d0864148096dcce66c6484c45965",
 +    "Sources/SDKtools/STWebProbe.m": "8cb695b91bb194b0c88f79b9da8cc59ea26810c032f7a186ebc4c17b3373d88d",
 +    "Sources/SDKtools/STWebProbeSanitizer.inc": "45522ae237b7535b8ced7aaed39dec00573b77f18100f74bbd6052502531dc77",
@@ -1252,7 +1263,7 @@
 +    "Tests/test_card_early_analysis.py": "e1bfa9def363effe4d8e1ec17b274f263836a7a7d3490bfa74c9cfc2a4388fcc",
 +    "Tests/test_objc_property_names.py": "6a2e1206b514b59ca68886c33bfb6688a10923a389c19cf98dc5bab7968ac03c",
 +    "Tests/test_packaging.py": "b6c8fdaf7430a1d36f3403ed66209b6980c555e4badab107f69428b41ec7d16f",
-+    "Tests/warehouse_test.test.cjs": "34e62f3ecbabb8bedc6522734bbbe8fc640caf5c1f8608f064e1ce8a0603ce2c",
++    "Tests/warehouse_test.test.cjs": "0e0ea80d5de14d2827318b035f7792bcfcb4bde335f67ae1e8390f2e1466386c",
 +    "Tests/warehouse_tool.test.cjs": "e468c790ac8e55364a4f945b24442f9be96c78f0be9ca9bcf13c90fc6788b96d",
 +    "Tests/web_probe_sanitizer_test.m": "195994e6ca30c04f020683e75e1e5e92071ff56f0161754c6abc2ddb36b71662",
 +    "Tests/xray_overlay.test.cjs": "3a4df95b2dceafd865c2566e75c95f51ca537bfb6c2e959badcd5349f50a4c9e",

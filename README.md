@@ -35,3 +35,5 @@ Os observadores são temporários na instância de Socket, não no protótipo gl
 ZIP `SDKtools_Fontes.zip` e workflow `compilar.yml` são um par por SHA-256/tamanho. Workflow Compilar SDKtools US, `base_source=release`, `release_tag=base-us-6.6.2`. Saída: `WePlay_US_6.6.2_SDKtools_v3_19_9_unsigned.ipa`. Requer assinatura.
 
 O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
+
+A observação também fica vinculada ao start_time da rodada, à sala e à instância da conexão (valores somente em memória). Troca de rodada/sala/reconexão invalida a confirmação do slot, mesmo com IDs de carta reutilizados.
