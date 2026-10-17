@@ -2,7 +2,7 @@
 
 Base oficial: main `634e9734c39d1e5ed79b115ae75b0ceba5874332`, SDKtools 3.22.1/build 49. Esta versão atende ao feedback sobre o menu grande, texto cortado e tarjas sobre a partida.
 
-O popup UIKit tem até **288 × 380 pt**, com altura ajustada ao conteúdo e à área segura. Exibe uma aba por vez: Alpaca, Cartas ou Bilhar. A aba do jogo identificado recebe destaque laranja; as outras ficam escurecidas e seus comandos permanecem bloqueados. Consultar uma aba não muda a identidade do jogo. Ao trocar de minijogo, a aba correspondente é selecionada automaticamente.
+O popup UIKit tem até **288 × 380 pt (altura limitada também a 82% da área segura)**, com altura ajustada ao conteúdo e à área segura. Exibe uma aba por vez: Alpaca, Cartas ou Bilhar. A aba do jogo identificado recebe destaque laranja; as outras ficam escurecidas e seus comandos permanecem bloqueados. Consultar uma aba não muda a identidade do jogo. Ao trocar de minijogo, a aba correspondente é selecionada automaticamente.
 
 Usa logos e ícones locais SDK, Syne nas abas, Geist nos controles e Martian Mono na versão. Fontes do popup têm escala limitada para evitar que ultrapassem os controles. Alvos de toque têm pelo menos 44 pt e conteúdo adicional rola dentro do painel. O ícone flutuante de 44 × 44 pt pode ser arrastado e acompanha a área segura. O popup recolhe esse ícone enquanto aberto e tem botão próprio para minimizar.
 
