@@ -1,38 +1,46 @@
-# SDKtools 3.20.0 / build 46 — Alpaca Turbo
+# SDKtools 3.21.0 / build 47 — Bilhar inteligente
 
-Base: 3.19.9. WePlay US 6.6.2/build132. Missões continuam prioritárias; Bilhar e Cartas preservados. O experimento de trava do armazém foi retirado do menu desta versão. O usuário relatou código500 no teste anterior; não é tratado como desbloqueio nem como identificação conclusiva da causa.
+WePlay **US 6.6.2/build132**. Base SDK3.20.0. Alpaca e Cartas preservados;
+os15 JavaScripts não mudaram. A nova versão adiciona controles do Bilhar.
 
 ## Usar
 
-No menu **Crazy Alpaca**, há três controles independentes, inicialmente desligados:
+1. Abra a **partida atual** e o menu SDKtools → Bilhar.
+2. **Ativar leitura**: somente guia/diagnóstico, sem ações.
+3. **Aim automático · sem disparar**: escolhe bola/caçapa, ajusta mira e força;
+   você dispara manualmente. O primeiro toque pausa a automação, preservando a mira.
+4. **Autoplay inteligente · partida atual**: escolhe diretas/tabelas e força,
+   confirma o caminho e usa uma vez o release original, esperando o turno seguinte.
+5. Toque na mesa, abra o menu ou vá para segundo plano para pausar. Rearme
+   explicitamente. Fim da partida para: **sem revanche e sem fila automática**.
 
-1. **Turbo**: agenda leituras a cada40ms em vez de100ms. Exige duas observações estáveis separadas por pelo menos40ms em vez de80ms. Não acelera o relógio do jogo, não corta suas animações e não envia jogadas em lote.
-2. **Planejamento maior**: compara caminhos com vários trios, até18 seleções hipotéticas. Busca em feixe de24 estados, máximo12000 expansões/24 fatias de6ms. Mantém uma rota segura do planejador anterior como fallback. Executa apenas o primeiro trio provado e replaneja a partir da mesa real.
-3. **Habilitar uso de poderes**: autoriza **consumir seu estoque existente** de Reserva/Storage, Desfazer/Withdraw e Embaralhar/Refresh, somente como resgate quando não há rota segura encontrada e a bandeja tem pelo menos4 cartas. Não compra, cria ou recarrega poderes.
+O HUD mostra alvo, força, estado, tacadas solicitadas, amostras de calibração e
+tempo desde início da leitura. Exporte a leitura para conferir `automation`.
 
-Ative as opções desejadas e toque **Iniciar autoplay**. Nenhuma opção inicia o jogo sozinha. As permissões não ficam ligadas após reiniciar o aplicativo. Toque manual na partida, captura e segundo plano continuam pausando o autoplay.
+## Física, calibração e limites
 
-## Como os poderes são escolhidos
+Impulso original `0.031*p*sqrt(p/CUE_POWER_MAX)`, massa/inércia e geometria
+vivas, busca limitada de força por contato-slip/rolamento, trajetória direta
+ou tabela de uma reflexão, oclusão e proteção da bola8. Os casts vivos validam
+rota/primeiro contato. Calibração só ajusta lançamento após3 trechos medidos
+qualificados, com ganho limitado0.9–1.1.
 
-- Primeiro tenta resolver com cartas, mantendo prioridade da missão.
-- **Reserva**: somente com reserva vazia e previsão de trio acessível após liberar3 espaços. Como o servidor escolhe as cartas, verifica todas as possíveis combinações de3 cartas da bandeja, não presume quais serão movidas.
-- **Desfazer**: exige a última carta identificada na bandeja, origem conhecida e um trio acessível após a volta. Considera a cobertura que essa carta pode criar ao voltar para a pilha.
-- **Embaralhar**: último recurso. O resultado é desconhecido antes do uso; não promete uma combinação vencedora.
-- Poderes direcionados (Penetrate/Bomb), tipos desconhecidos e estoque zero não são automatizados nesta versão. Continuam disponíveis pelos controles manuais já existentes quando compatíveis.
-- No máximo um poder confirmado entre jogadas normais confirmadas: não gasta o inventário em uma sequência de tentativas de resgate sem progresso.
+É modelo reduzido, não o solver PhysX completo nem aim perfeito. Sem rota
+segura confirmada, aguarda. Bola na mão requer colocação manual e reativação;
+spin selecionado, tutorial/offline e contrato incompatível não são automatizados.
+Leia `Analysis/V3_21_0-billiards-strategy.md` para regras, fontes, REA e limites.
 
-Abre a janela original e confirma em outra leitura, validando novamente identidade/tipo/estoque/contexto. Exige diminuição exata de1 no estoque e efeito correspondente, estável, na mesa. Uma solicitação não é contabilizada como carta jogada nem como efeito confirmado.
+## Compilar e instalar
 
-## Se parar aguardando um poder
+`SDKtools_Fontes.zip` e `compilar.yml` formam um par fixado por tamanho/SHA256.
+Workflow **Compilar SDKtools US**, branch desta versão, `base_source=release`,
+`release_tag=base-us-6.6.2`. Saída:
+`WePlay_US_6.6.2_SDKtools_v3_21_0_unsigned.ipa` — **precisa assinar para instalar**.
 
-Não há reenvio automático após erro, exceção ou timeout. Desabilitar poderes ou pausar impede nova confirmação, mas não desfaz um pedido já enviado. Se a página mudar com poder pendente, o autoplay fica bloqueado até conferir a partida e reiniciar o aplicativo; uma nova página não herda o latch JavaScript anterior.
+Testes Lua5.3/mocks, regressões Python/JavaScript e CI Apple são verificados
+separadamente. **Sem iPhone conectado nesta estação: precisão e compatibilidade
+viva da automação ainda exigem teste no aparelho.** Não há vitória/ganho garantido.
 
-Exporte o relatório normal e procure `autoplay.powers`, `autoplay.planning`, `autoplay.reading` e `autoplay.events`. Somente contadores, tipos numéricos e motivos enumerados são exportados; IDs de cartas, sala, usuário e poderes ficam apenas em memória.
-
-## Compilar
-
-`SDKtools_Fontes.zip` e `compilar.yml` formam um par por SHA-256 e tamanho. GitHub Actions **Compilar SDKtools US**, `base_source=release`, `release_tag=base-us-6.6.2`.
-
-Saída: `WePlay_US_6.6.2_SDKtools_v3_20_0_unsigned.ipa`. **Requer assinatura para instalar.**
-
-Os testes usam cenas/servidor simulados e capturas históricas. Compilação/linkagem Apple e integração no IPA são verificações separadas. Não há iPhone conectado nesta estação: velocidade, compatibilidade dos controles vivos e aceitação dos poderes ainda precisam de validação no aparelho. Não há garantia de vitória ou jogada perfeita.
+Alpaca mantém missão primeiro, Turbo, planejamento maior e poderes próprios
+opt-in, todos inicialmente desligados. O experimento de armazém continua oculto.
+Cartas mantém cores efetivamente recebidas, sem inventar faces ocultas.
