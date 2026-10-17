@@ -1,0 +1,1712 @@
+--- a/Analysis/V3_20_0-alpaca-turbo.md
++++ b/Analysis/V3_20_0-alpaca-turbo.md
+@@ -0,0 +1,33 @@
++# Alpaca Turbo: contratos e revisão 3.20.0
++
++## Escopo e proveniência
++
++Alterações no SDK próprio, base imutável3.19.9/45. Nenhuma requisição real enviada desta estação. Fonte original do Alpaca analisado estaticamente, SHA256 `cbbf9dec2d3cbaf9595834934147344eca4e7c6c4fe3957b590f5c24660c19e6`.
++
++Evidência REA histórica: `ev_dd6444e1867e31b5754942583b950411648ed71ae31b661765736bcc48a0649c` (estoque/partida) e `ev_3f2c82f2b6a506cd75eec2c0024106e49a9e80a7ab2b9959726e71325cf77b74` (missão). O bundle histórico completo teve128 módulos extraídos por AST, sem executar código capturado. `UsePropAlert` foi relido no mesmo bundle, intervalo de caracteres3632251–3635265: setup recebe propInfo, desabilita estoque zero, fecha em4s; confirmação usa Socket.UseProp(propInfo.id), exceto Penetrate, que exige seleção adicional. Intervalos de caracteres não são offsets binários UTF8.
++
++## Separação de responsabilidades
++
++- `autoplay_planner.js`: preservado byte a byte; próximo trio, prioridade de missão e fallback normais existentes.
++- `autoplay_extended.js`: envelope opcional. Validação inicial pelo planejador original; busca incremental multitrio com corte de feixe e orçamento limitado. Não possui controle do jogo. Publica somente a sequência até o primeiro trio, submetida ao replay independente existente no adapter.
++- `autoplay_tool.js`: snapshot vivo e cartas por EventHandler/EventTouch originais. Turbo reduz cadência/estabilidade, mas mantém duas observações e planejamento/execução em ticks diferentes. Preferências não apagam envio incerto.
++- `autoplay_powers.js`: coordenador opcional. Lê Game→GameLayer→PropArea e GameStore/Socket vivos. Usa `return_tool.js` existente, preservado, para abrir/confirmar. Sem transporte próprio, alteração de inventário ou compra.
++- Nativo: três opções de sessão, consentimento explícito para consumo, timer serializado e telemetria saneada. Troca de documento com poder não resolvido bloqueia reinício automático.
++
++## Poderes
++
++PropType original: Storage0, Withdraw1, Refresh2, Penetrate3, Bomb4, remove5. Automação cobre somente0–2. Cruza Prop.propInfo com props_blocks; o wrapper original verifica a assinatura visual completa dos3 slots e eventos registrados. Não deduz tipo apenas da posição.
++
++Guarda: jogador vivo/não espectador, Started2, modos especiais inativos, conexão aberta, rodada/sala/usuário/Socket/websocket estáveis, estoque positivo coerente entre Store e componentes. Não exporta identificadores.
++
++Reserva exige trio imediatamente acessível para cada possível subconjunto de3 cartas transferidas. Desfazer exige trio após a volta e considera cobertura criada pela carta que retorna. Não garante aceitação pelo servidor. Refresh é estocástico e avaliado só após o uso.
++
++Confirmação exige estoque específico diminuído exatamente1 e efeito correspondente: Reserva move3 identidades de mão para reserva; Desfazer move a última carta à origem; Refresh conserva identidades/zonas/mão e altera ao menos um tipo fora da mão. Duas observações coerentes separadas por80ms, quebradas por snapshot incompleto. Estoque sem efeito ou efeito sem estoque não prova sucesso. Refresh que sorteie exatamente a mesma distribuição fica incerto e nunca é reenviado automaticamente.
++
++Não há correlação nova de packet_id/ack para poderes: o contrato observado é estoque mais efeito da mesa pelo fluxo original. Não rotular disparo como confirmação de servidor. A tentativa de trava anterior, cujo500 foi relatado pelo usuário sem novo relatório anexado, está suspensa/oculta; não identifica uma regra de servidor.
++
++## Limites
++
++Busca em feixe não é exaustiva: uma rota melhor pode ser descartada. No máximo18 seleções hipotéticas,24 estados por camada,12000 expansões e24 fatias de6ms. O resultado publicado prova o primeiro trio, não a vitória. Turbo40ms é cadência alvo, não duração garantida da jogada: WebKit, animação e rede continuam limitando.
++
++Bilhar e recursos de Cartas preservados. Arquivos de exportação nativos do Bilhar só recebem a string de versão. Fixtures são mocks/capturas históricas, não execução nova em Unity/Cocos/iPhone.
+--- a/README.md
++++ b/README.md
+@@ -1,39 +1,38 @@
+-# SDKtools 3.19.9 / build 45 — Teste experimental da trava do armazém
++# SDKtools 3.20.0 / build 46 — Alpaca Turbo
+ 
+-Base: 3.19.8 (prioridade de missão preservada). WePlay US 6.6.2/build132. Cartas e Bilhar preservados. **Esta versão testa uma hipótese; não oferece desbloqueio permanente nem uso ilimitado.**
++Base: 3.19.9. WePlay US 6.6.2/build132. Missões continuam prioritárias; Bilhar e Cartas preservados. O experimento de trava do armazém foi retirado do menu desta versão. O usuário relatou código500 no teste anterior; não é tratado como desbloqueio nem como identificação conclusiva da causa.
+ 
+-## Usar no iPhone
++## Usar
+ 
+-1. Assine/instale o IPA. Entre no Crazy Alpaca **em time**, antes de iniciar o autoplay. Espere qualquer jogada pendente terminar.
+-2. Deixe seu próprio slot **vazio e bloqueado**. No menu Alpaca, toque **Testar trava (1 tentativa)**.
+-3. O SDK escreve zero temporariamente no campo local de trava, executa a abertura original e restaura a trava antes de devolver o controle. Se o seletor abriu, **escolha UMA carta**. Essa escolha pode colocar uma carta real no armazém e alterar sua partida.
+-4. Reabra o menu e toque **Ver resultado do teste**. Repita apenas essa consulta se a resposta/movimentação ainda não chegou; ela não reenvia o pedido.
+-5. Exporte o relatório normal do SDKtools e envie o JSON. O resultado fica em `warehouseLockTest.diagnostic` e nos últimos16registros de `warehouseLockTest.events`.
++No menu **Crazy Alpaca**, há três controles independentes, inicialmente desligados:
+ 
+-O botão **Meu armazém** normal continua exigindo slot livre/destravado. O botão experimental é separado. O autoplay é pausado e não é retomado automaticamente. Encerre o teste pelo botão próprio; no resultado incerto de um pedido enviado, não há liberação para nova tentativa automática. Para outro teste independente, reinicie o aplicativo.
++1. **Turbo**: agenda leituras a cada40ms em vez de100ms. Exige duas observações estáveis separadas por pelo menos40ms em vez de80ms. Não acelera o relógio do jogo, não corta suas animações e não envia jogadas em lote.
++2. **Planejamento maior**: compara caminhos com vários trios, até18 seleções hipotéticas. Busca em feixe de24 estados, máximo12000 expansões/24 fatias de6ms. Mantém uma rota segura do planejador anterior como fallback. Executa apenas o primeiro trio provado e replaneja a partir da mesa real.
++3. **Habilitar uso de poderes**: autoriza **consumir seu estoque existente** de Reserva/Storage, Desfazer/Withdraw e Embaralhar/Refresh, somente como resgate quando não há rota segura encontrada e a bandeja tem pelo menos4 cartas. Não compra, cria ou recarrega poderes.
+ 
+-## Como interpretar
++Ative as opções desejadas e toque **Iniciar autoplay**. Nenhuma opção inicia o jogo sozinha. As permissões não ficam ligadas após reiniciar o aplicativo. Toque manual na partida, captura e segundo plano continuam pausando o autoplay.
+ 
+-- `armed`: seletor original aberto; o teste ainda não observou pedido de colocação.
+-- `submitted`: foi observado o envelope original de uma escolha manual, sem alterar bytes/argumentos.
+-- `accepted`, `serverCode=200`: resposta de protocolo correspondente ao pedido observado. **Não prova por si só mudança do slot.**
+-- `slotEffectConfirmed=true`: além do200, a mesma carta apareceu no próprio slot, observada coerentemente no Store/componente. **Ainda não prova desbloqueio após retirar essa carta nem uso ilimitado.**
+-- `rejected`: o servidor devolveu um código diferente de200. Isso não identifica sozinho a causa da recusa.
+-- `uncertain`: envio/retorno/restauração não comprovados. Não repetir o pedido; confira ou reabra a partida.
+-- `expired`: expirou a seleção sem pedido observado.
++## Como os poderes são escolhidos
+ 
+-O lease de seleção é30s; após pedido observado,15s para resposta. Não há envio automático, pacote fabricado, chamada de debug, alteração de saldo/poderes, repetição do pedido ou mudança no slot de outro jogador. O usuário ainda pode fazer ações normais no jogo; elas não são automaticamente atribuídas ao teste.
++- Primeiro tenta resolver com cartas, mantendo prioridade da missão.
++- **Reserva**: somente com reserva vazia e previsão de trio acessível após liberar3 espaços. Como o servidor escolhe as cartas, verifica todas as possíveis combinações de3 cartas da bandeja, não presume quais serão movidas.
++- **Desfazer**: exige a última carta identificada na bandeja, origem conhecida e um trio acessível após a volta. Considera a cobertura que essa carta pode criar ao voltar para a pilha.
++- **Embaralhar**: último recurso. O resultado é desconhecido antes do uso; não promete uma combinação vencedora.
++- Poderes direcionados (Penetrate/Bomb), tipos desconhecidos e estoque zero não são automatizados nesta versão. Continuam disponíveis pelos controles manuais já existentes quando compatíveis.
++- No máximo um poder confirmado entre jogadas normais confirmadas: não gasta o inventário em uma sequência de tentativas de resgate sem progresso.
+ 
+-## O que é escrito e restaurado
++Abre a janela original e confirma em outra leitura, validando novamente identidade/tipo/estoque/contexto. Exige diminuição exata de1 no estoque e efeito correspondente, estável, na mesa. Uma solicitação não é contabilizada como carta jogada nem como efeito confirmado.
+ 
+-Somente o descritor de dados de `commonBlock.lock_state` do próprio slot vazio é sobrescrito durante a chamada de abertura. Não são zeradas travas de cartas especiais. A restauração atua no objeto original, sem substituir um objeto novo recebido. Falhas de restauração são reportadas como incertas, nunca como sucesso.
++## Se parar aguardando um poder
+ 
+-Os observadores são temporários na instância de Socket, não no protótipo global. A escolha e o send originais preservam this/argumentos/retorno/exceções/Promise. A inspeção lê somente o cabeçalho da resposta correlacionada; corpos, UID/rid, segredo, IDs de carta e de pacote não são exportados. Eventos sintéticos de página não são aceitos como retorno de rede.
++Não há reenvio automático após erro, exceção ou timeout. Desabilitar poderes ou pausar impede nova confirmação, mas não desfaz um pedido já enviado. Se a página mudar com poder pendente, o autoplay fica bloqueado até conferir a partida e reiniciar o aplicativo; uma nova página não herda o latch JavaScript anterior.
+ 
+-## Compilar e limites
++Exporte o relatório normal e procure `autoplay.powers`, `autoplay.planning`, `autoplay.reading` e `autoplay.events`. Somente contadores, tipos numéricos e motivos enumerados são exportados; IDs de cartas, sala, usuário e poderes ficam apenas em memória.
+ 
+-ZIP `SDKtools_Fontes.zip` e workflow `compilar.yml` são um par por SHA-256/tamanho. Workflow Compilar SDKtools US, `base_source=release`, `release_tag=base-us-6.6.2`. Saída: `WePlay_US_6.6.2_SDKtools_v3_19_9_unsigned.ipa`. Requer assinatura.
++## Compilar
+ 
+-O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
++`SDKtools_Fontes.zip` e `compilar.yml` formam um par por SHA-256 e tamanho. GitHub Actions **Compilar SDKtools US**, `base_source=release`, `release_tag=base-us-6.6.2`.
+ 
+-A observação também fica vinculada ao start_time da rodada, à sala e à instância da conexão (valores somente em memória). Troca de rodada/sala/reconexão invalida a confirmação do slot, mesmo com IDs de carta reutilizados.
++Saída: `WePlay_US_6.6.2_SDKtools_v3_20_0_unsigned.ipa`. **Requer assinatura para instalar.**
++
++Os testes usam cenas/servidor simulados e capturas históricas. Compilação/linkagem Apple e integração no IPA são verificações separadas. Não há iPhone conectado nesta estação: velocidade, compatibilidade dos controles vivos e aceitação dos poderes ainda precisam de validação no aparelho. Não há garantia de vitória ou jogada perfeita.
+--- a/Resources/Info.plist
++++ b/Resources/Info.plist
+@@ -15,13 +15,13 @@
+ 	<key>CFBundlePackageType</key>
+ 	<string>FMWK</string>
+ 	<key>CFBundleShortVersionString</key>
+-	<string>3.19.9</string>
++	<string>3.20.0</string>
+ 	<key>CFBundleSupportedPlatforms</key>
+ 	<array>
+ 		<string>iPhoneOS</string>
+ 	</array>
+ 	<key>CFBundleVersion</key>
+-	<string>45</string>
++	<string>46</string>
+ 	<key>DTPlatformName</key>
+ 	<string>iphoneos</string>
+ 	<key>MinimumOSVersion</key>
+--- a/Resources/autoplay_extended.js
++++ b/Resources/autoplay_extended.js
+@@ -0,0 +1,90 @@
++/* Bounded multi-trio beam search. The original planner remains the fallback.
++ * Only the first complete trio is dispatched; every action is live-revalidated.
++ * Beam exhaustion means bounded search, never proof of global impossibility. */
++(function (base) {
++  'use strict';
++  var job=null;
++  return function extended(input) {
++    if (!input || input.extendedPlanning !== true) { job=null; return base(input); }
++    var stamp=JSON.stringify([input.stateKey,input.mission,input.cards,input.tray,input.capacity]);
++    if (!job || job.stamp!==stamp) job={stamp:stamp,fallback:null,slices:0,nodes:0,depth:0,best:null,done:false};
++    var j=job, start=Date.now();
++    if (!j.fallback) {
++      var original=base(input);
++      if (original.status!=='move') return original;
++      j.fallback=original;
++      var cards=input.cards, index=new Map(cards.map(function(c,i){return [c.id,i];}));
++      j.cards=cards; j.index=index;
++      j.beam=[{path:[],removed:new Set(),counts:new Map(),occupancy:input.tray.length,triples:0,first:null,firstType:null,peak:input.tray.length}];
++      input.tray.forEach(function(c){var m=j.beam[0].counts;m.set(c.type,(m.get(c.type)||0)+1);});
++      j.next=[];j.cursor=0;j.scan=0;j.seen=new Set();
++    }
++    function expired(){return Date.now()-start>=6;}
++    function finish(){
++      j.done=true;
++      var output=j.best ? Object.assign({},j.fallback,j.best.proof) : Object.assign({},j.fallback);
++      output.stats=Object.assign({},j.fallback.stats,{goal:'multi_trio',searchMode:'bounded_beam',lookaheadDepth:j.depth,
++        lookaheadTriples:j.best?j.best.triples:1,lookaheadNodes:j.nodes,lookaheadSlices:j.slices,
++        completeSearch:false,completeSolution:j.best?false:j.fallback.stats.completeSolution,limit:'bounded_lookahead'});
++      if(input.mission && input.mission.current<input.mission.total)
++        output.stats.missionStatus=output.matchedType===input.mission.type?'priority':'fallback';
++      j.output=output;return output;
++    }
++    if(j.done)return j.output;
++    function eligible(s,c){return !s.removed.has(c.id) && c.locked!==true && c.selectable!==false &&
++      (c.available || c.blockedBy.length>0) && c.blockedBy.every(function(id){return s.removed.has(id);});}
++    function proof(path){
++      var counts=new Map(),groups=new Map(),peak=input.tray.length,occupancy=input.tray.length;
++      input.tray.forEach(function(c){counts.set(c.type,(counts.get(c.type)||0)+1);var a=groups.get(c.type)||[];a.push(c.id);groups.set(c.type,a);});
++      for(var k=0;k<path.length;k++){
++        var c=j.cards[j.index.get(path[k])],a=groups.get(c.type)||[];a.push(c.id);groups.set(c.type,a);
++        occupancy++;peak=Math.max(peak,occupancy);var count=(counts.get(c.type)||0)+1;counts.set(c.type,count);
++        if(count===3)return {sequence:path.slice(0,k+1),actions:path.slice(0,k+1),cardID:path[0],proofKind:'local_trio',
++          matchedType:c.type,tripleCardIDs:a.slice(),peakTrayCount:peak};
++      }
++      return null;
++    }
++    function rank(s){
++      var mission=input.mission, priority=mission && mission.current<mission.total && s.firstType===mission.type ? 1:0;
++      var accessible=new Map(s.counts);
++      j.cards.forEach(function(c){if(eligible(s,c))accessible.set(c.type,(accessible.get(c.type)||0)+1);});
++      var next=0;accessible.forEach(function(n,t){if(n>=3 && 3-(s.counts.get(t)||0)<=input.capacity-s.occupancy)next++;});
++      return [priority,s.triples,-s.occupancy,next,-s.peak,-s.path.length];
++    }
++    function compare(a,b){for(var k=0;k<a.length;k++)if(a[k]!==b[k])return a[k]-b[k];return 0;}
++    j.slices++;
++    while(j.nodes<12000 && j.slices<=24 && j.depth<18){
++      if(expired())break;
++      if(j.cursor>=j.beam.length){
++        if(!j.next.length)return finish();
++        j.next.sort(function(a,b){return compare(b.score,a.score);});
++        j.beam=j.next.slice(0,24);j.next=[];j.cursor=0;j.scan=0;j.seen=new Set();j.depth++;
++        continue;
++      }
++      var s=j.beam[j.cursor];
++      if(j.scan>=j.cards.length){j.cursor++;j.scan=0;continue;}
++      var c=j.cards[j.scan++];
++      if(!eligible(s,c))continue;
++      var count=s.counts.get(c.type)||0,trio=count===2;
++      if(s.occupancy>=input.capacity || (!trio && s.occupancy+1>=input.capacity))continue;
++      j.nodes++;
++      var n={path:s.path.concat(c.id),removed:new Set(s.removed),counts:new Map(s.counts),occupancy:s.occupancy+1-(trio?3:0),
++        triples:s.triples+(trio?1:0),first:s.first,firstType:s.firstType,peak:Math.max(s.peak,s.occupancy+1)};
++      n.removed.add(c.id);n.counts.set(c.type,trio?0:count+1);
++      if(!n.first && trio){n.first=proof(n.path);n.firstType=c.type;}
++      var key=JSON.stringify(Array.from(n.removed).sort());
++      if(j.seen.has(key))continue;j.seen.add(key);
++      n.score=rank(n);j.next.push(n);
++      // Keep memory bounded even before the end-of-depth beam cut.
++      if(j.next.length>192){j.next.sort(function(a,b){return compare(b.score,a.score);});j.next.length=48;}
++      if(trio && n.triples>=2 && (!j.best || compare(n.score,j.best.score)>0)){
++        // Never downgrade a proved mission-first baseline for a normal route.
++        if(j.fallback.stats.missionStatus==='priority' && n.firstType!==input.mission.type)continue;
++        j.best={proof:n.first,triples:n.triples,score:n.score,empty:n.removed.size===j.cards.length&&n.occupancy===0};
++      }
++    }
++    if(j.nodes>=12000 || j.slices>=24 || j.depth>=18)return finish();
++    return {status:'searching',reason:'search_in_progress',stats:Object.assign({},j.fallback.stats,
++      {goal:'multi_trio',lookaheadDepth:j.depth,lookaheadNodes:j.nodes,lookaheadSlices:j.slices,completeSearch:false})};
++  };
++})
+--- a/Resources/autoplay_powers.js
++++ b/Resources/autoplay_powers.js
+@@ -0,0 +1,163 @@
++/* Emergency power coordinator. No direct transport, stock writes or purchases.
++ * One original popup open and one separately revalidated original confirmation.
++ * Only Storage(0), Withdraw(1), Refresh(2); targeted/unknown powers are excluded.
++ * A stock decrement AND a matching, stable board effect are required. */
++(function (originalPower) {
++  'use strict';
++  var active=null, lastAttempt=null, spentSinceMove=false, confirmed=0;
++  var diagnostic={status:'off',confirmed:0};
++  function own(o,k){var d=o&&Object.getOwnPropertyDescriptor(o,k);return d&&Object.prototype.hasOwnProperty.call(d,'value')?d.value:undefined;}
++  function int(v,l,h){return Number.isInteger(v)&&v>=l&&v<=h;}
++  function visible(n){return n&&n.isValid===true&&n.activeInHierarchy===true&&n.opacity>0;}
++  function now(){return performance.now();}
++  function read(){
++    var cc=window.cc,root=cc&&cc.director.getScene(),start=now(),seen=new Set(),stack=[root],games=[],popups=[],alerts=[];
++    var primary=cc&&cc.ENGINE_VERSION,fallback=window.CocosEngine;
++    if(!cc||(typeof primary==='string'&&typeof fallback==='string'&&primary!==fallback)||
++      (typeof primary==='string'?primary:fallback)!=='2.4.4'||!visible(root)||document.visibilityState!=='visible')throw Error('context');
++    while(stack.length){
++      if(seen.size>=4096||now()-start>=18)throw Error('budget');
++      var n=stack.pop();if(!n||seen.has(n))throw Error('scene');seen.add(n);if(!visible(n))continue;
++      var comps=n.getComponents?n.getComponents(cc.Component):[];
++      if(!Array.isArray(comps)||comps.length>32||!Array.isArray(n.children)||n.children.length>512)throw Error('scene');
++      comps.forEach(function(c){var name=cc.js.getClassName(c);if(name==='Game')games.push(c);
++        if(typeof name==='string'&&/Alert$/.test(name)){alerts.push(c);if(name==='UsePropAlert')popups.push(c);}});
++      n.children.forEach(function(child){if(child.parent!==n)throw Error('parent');stack.push(child);});
++    }
++    if(games.length!==1)throw Error('game');
++    var game=games[0],layer=own(game,'GameLayer'),area=own(layer,'PropArea'),row=own(area,'AreaNode');
++    var loader=own(window,'__require'),store=typeof loader==='function'?own(loader('GameStore'),'default'):null;
++    var socket=typeof loader==='function'?own(loader('Socket'),'default'):null,ws=own(socket,'socket');
++    if(!ws||ws.readyState!==1)throw Error('connection');
++    if(!layer||!area||cc.js.getClassName(layer)!=='GameLayer'||cc.js.getClassName(area)!=='PropArea'||
++      layer.isValid!==true||area.isValid!==true||!seen.has(layer.node)||!seen.has(area.node)||!seen.has(row)||
++      !row||row.width!==292||row.height!==90||row.children.length!==3||own(store,'isWatcher')!==false||
++      own(store,'state')!==2||own(store,'isHotTiming')!==false||own(store,'isAddingCommonBlock')!==false||
++      own(store,'isUsingPenetrateProp')!==false||own(store,'isCanTouchBlock')!==true)throw Error('state');
++    if(game.isValid!==true||game.enabled===false||game.enabledInHierarchy===false||layer.enabled===false||area.enabled===false)throw Error('game');
++    function inside(node,parent){for(var depth=0;node&&depth<=24;depth++,node=node.parent)if(node===parent)return true;return false;}
++    if(!inside(layer.node,game.node)||!inside(area.node,layer.node)||!inside(row,area.node))throw Error('owner');
++    var uid=own(store,'uid'),gamers=own(store,'gamers');
++    if(!(typeof uid==='string'&&uid.length>0&&uid.length<=128)&&!int(uid,1,9007199254740991))throw Error('player');
++    if(!Array.isArray(gamers)||gamers.filter(function(g){return own(g,'uid')===uid&&own(g,'state')===1;}).length!==1)throw Error('player');
++    var startTime=own(store,'start_time'),rid=own(store,'rid');
++    if(!(typeof rid==='number'||typeof rid==='string')||!int(startTime,1,9007199254740991))throw Error('round');
++    var inventory=own(store,'props_blocks');if(!Array.isArray(inventory)||inventory.length>16)throw Error('stock');
++    var slots=row.children.map(function(n,i){
++      var list=n.getComponents(cc.Component),props=list.filter(function(c){return cc.js.getClassName(c)==='Prop';});
++      if(props.length!==1||!visible(n)||n.parent!==row)throw Error('prop');
++      var p=props[0],info=own(p,'propInfo'),id=own(info,'id'),type=own(info,'type'),count=own(info,'count');
++      var matches=inventory.filter(function(v){return own(v,'id')===id&&own(v,'type')===type&&own(v,'count')===count;});
++      if(p.isValid!==true||p.node!==n||!int(type,0,5)||!int(count,0,1000000)||matches.length!==1||
++        own(p,'id')!==id||own(p,'type')!==type||own(p,'num')!==count)throw Error('stock');
++      return {id:id,type:type,count:count,slot:['left','center','right'][i],prop:p};
++    });
++    if(new Set(slots.map(function(s){return s.id;})).size!==3)throw Error('stock');
++    return {cc:cc,root:root,store:store,layer:layer,uid:uid,startTime:startTime,rid:rid,socket:socket,ws:ws,socketRoom:own(socket,'rid'),slots:slots,popups:popups,alerts:alerts};
++  }
++  function same(a,b){return a.root===b.root&&a.store===b.store&&a.layer===b.layer&&a.uid===b.uid&&a.startTime===b.startTime&&a.rid===b.rid&&
++    a.socket===b.socket&&a.ws===b.ws&&a.socketRoom===b.socketRoom;}
++  function status(value){diagnostic={status:value,confirmed:confirmed};if(active)diagnostic.type=active.power.type;return diagnostic;}
++  function board(s){return s.cards.concat(s.tray).map(function(c){return {id:c.id,rawID:c.rawID,type:c.type,zone:c.zone};});}
++  function directTrio(hand,exposed,capacity){
++    var h=new Map(),a=new Map();hand.forEach(function(c){h.set(c.type,(h.get(c.type)||0)+1);});
++    exposed.forEach(function(c){a.set(c.type,(a.get(c.type)||0)+1);});
++    var possible=false;a.forEach(function(n,t){var needed=3-(h.get(t)||0);if(n>=needed&&needed<=capacity-hand.length)possible=true;});
++    return possible;
++  }
++  function storageHelps(s){
++    // The server chooses the three stored cards. Do not assume which three:
++    // every three-card subset must leave at least one exposed completable trio.
++    var h=s.tray,exposed=s.cards.filter(function(c){return c.available&&c.selectable!==false;});
++    for(var i=0;i<h.length-2;i++)for(var j=i+1;j<h.length-1;j++)for(var k=j+1;k<h.length;k++){
++      var moved=[h[i],h[j],h[k]],left=h.filter(function(_,n){return n!==i&&n!==j&&n!==k;});
++      if(!directTrio(left,exposed.concat(moved),s.capacity))return false;
++    }
++    return h.length>=3;
++  }
++  function withdrawHelps(s,id,state){
++    var card=s.tray.filter(function(c){return c.rawID===id;})[0];if(!card||card.selectable===false)return false;
++    var exposed=s.cards.filter(function(c){return c.available&&c.selectable!==false;}),left=s.tray.filter(function(c){return c!==card;});
++    if(state===0){
++      var info=own(card.metadata.block,'blockInfo'),layer=own(info,'layer'),pieces=id.split('-'),row=Number(pieces[1]),col=Number(pieces[2]);
++      if(!int(layer,0,10000)||pieces.length<3||!Number.isFinite(row)||!Number.isFinite(col))return false;
++      var near=function(c){return c.zone==='board'&&Math.abs(c.gridRow-row)<16&&Math.abs(c.gridCol-col)<20;};
++      exposed=exposed.filter(function(c){return !(near(c)&&layer>c.layer);});
++      if(!s.cards.some(function(c){return near(c)&&c.layer>layer;}))exposed.push(card);
++    }else exposed.push(card);
++    return directTrio(left,exposed,s.capacity);
++  }
++  function effect(a,s){
++    var after=board(s),before=a.before,byID=new Map(after.map(function(c){return [c.id,c];}));
++    if(before.length!==after.length||before.some(function(c){return !byID.has(c.id);}))return false;
++    var moved=[];
++    for(var i=0;i<before.length;i++){
++      var b=before[i],c=byID.get(b.id);
++      if(a.power.type!==2&&b.type!==c.type)return false;
++      if(b.zone!==c.zone)moved.push({before:b,after:c});
++    }
++    if(a.power.type===0)return moved.length===3&&moved.every(function(c){return c.before.zone==='tray'&&c.after.zone==='reserve';});
++    if(a.power.type===1)return moved.length===1&&moved[0].before.rawID===a.lastBlock&&moved[0].before.zone==='tray'&&
++      moved[0].after.zone===(a.lastState===0?'board':'reserve');
++    // Refresh can change types, not identity/zone or the existing hand.
++    return moved.length===0&&before.filter(function(c){return c.zone==='tray';}).every(function(c){return byID.get(c.id).type===c.type;})&&
++      before.some(function(c){return c.zone!=='tray'&&byID.get(c.id).type!==c.type;});
++  }
++  return {
++    diagnostic:function(){return diagnostic;},
++    busy:function(){return !!active;},
++    needsPopup:function(){return active&&active.phase==='opening';},
++    normalConfirmed:function(){spentSinceMove=false;},
++    freeze:function(){if(active)active.stable=null;},
++    begin:function(s,options,reason){
++      if(options.powersEnabled!==true||options.allowAction!==true||spentSinceMove||typeof originalPower!=='function')return false;
++      if(['no_complete_solution','no_remaining_triples','search_limit_reached','no_safe_move'].indexOf(reason)<0||s.tray.length<4)return false;
++      try{
++        var r=read();if(r.root!==s.root||r.layer.node!==s.gameLayer||r.alerts.length)return false;
++        var candidate=null,last=own(r.store,'last_block'),lastID=own(last,'id'),lastState=own(last,'state');
++        var priority=[0,1,2];
++        for(var k=0;k<priority.length;k++){
++          var type=priority[k],matches=r.slots.filter(function(p){return p.type===type&&p.count>0;});if(matches.length!==1)continue;
++          if(type===0&&(s.tray.length<3||s.cards.some(function(c){return c.zone==='reserve';})||!storageHelps(s)))continue;
++          if(type===1&&(!s.tray.some(function(c){return c.rawID===lastID;})||[0,2].indexOf(lastState)<0||!withdrawHelps(s,lastID,lastState)))continue;
++          candidate=matches[0];break;
++        }
++        if(!candidate){status('unavailable');return false;}
++        var key=JSON.stringify([r.startTime,r.rid,s.signature,candidate.id,candidate.count]);
++        if(lastAttempt===key)return false;lastAttempt=key;
++        active={context:r,power:candidate,phase:'opening',before:board(s),time:now(),stable:null,lastBlock:lastID,lastState:lastState};
++        // Set the latch BEFORE the original event, including an exception.
++        var out=originalPower({command:'open',slot:candidate.slot});
++        if(out.status!=='original_event_dispatched'){if(out.status==='no_action')active=null;else active.phase='uncertain';status('uncertain');return false;}
++        status('opening');return true;
++      }catch(_){if(active){active.phase='uncertain';status('uncertain');}else status('unavailable');return false;}
++    },
++    tick:function(options,s){
++      if(!active){status(options.powersEnabled===true?'ready':'off');return {status:'watching',reason:'action_disabled'};}
++      var a=active,r;
++      try{r=read();}catch(_){a.stable=null;status('uncertain');return {status:'waiting_confirmation',reason:'power_context_unavailable'};}
++      if(!same(a.context,r)){a.stable=null;status('uncertain');return {status:'waiting_confirmation',reason:'power_context_changed'};}
++      var stock=r.slots.filter(function(p){return p.id===a.power.id&&p.type===a.power.type;});
++      if(stock.length!==1){status('uncertain');return {status:'waiting_confirmation',reason:'power_context_changed'};}
++      if(a.phase==='opening'){
++        if(options.allowAction!==true||options.powersEnabled!==true)return {status:'waiting_confirmation',reason:'power_paused'};
++        if(now()-a.time>3500){status('uncertain');return {status:'waiting_confirmation',reason:'power_confirmation_uncertain'};}
++        if(r.alerts.length!==1||r.popups.length!==1)return {status:'waiting_confirmation',reason:'power_popup_pending'};
++        var info=own(r.popups[0],'propInfo');
++        if(own(info,'id')!==a.power.id||own(info,'type')!==a.power.type||own(info,'count')!==a.power.count||stock[0].count!==a.power.count){
++          status('uncertain');return {status:'waiting_confirmation',reason:'power_popup_mismatch'};}
++        a.phase='submitted';a.time=now();spentSinceMove=true;
++        var out;
++        try{out=originalPower({command:'confirm',slot:a.power.slot});}catch(_){out={status:'dispatch_uncertain'};}
++        if(out.status!=='original_event_dispatched'){status('uncertain');return {status:'dispatch_uncertain',reason:'power_dispatch_uncertain',dispatched:true};}
++        status('submitted');return {status:'original_event_dispatched',reason:'power_requested',dispatched:true};
++      }
++      if(s&&stock[0].count===a.power.count-1&&effect(a,s)){
++        if(!a.stable||a.stable.signature!==s.signature){a.stable={signature:s.signature,time:now()};return {status:'waiting_confirmation',reason:'power_effect_stability'};}
++        if(now()-a.stable.time>=80){confirmed++;active=null;status('confirmed');return {status:'watching',reason:'power_effect_confirmed'};}
++      }else a.stable=null;
++      status(now()-a.time>8000?'uncertain':'submitted');
++      return {status:'waiting_confirmation',reason:now()-a.time>8000?'power_confirmation_uncertain':'power_effect_pending'};
++    }
++  };
++})
+--- a/Resources/autoplay_tool.js
++++ b/Resources/autoplay_tool.js
+@@ -1,14 +1,16 @@
+-/* SDKtools V3.3. Live, bounded Cocos 2.4.4 adapter. Calls only the original
+- * registered touchBlock event. No captured source, inventory or network writes.
+- * Expression: (autoplay_tool.js)(autoplay_planner.js, xray_overlay.js) -> runtime(options).
++/* SDKtools V3.20. Live, bounded Cocos 2.4.4 adapter. Card moves use the original
++ * touchBlock event; opt-in powers use the guarded original popup coordinator.
++ * No captured source execution, inventory mutation or direct transport writes.
+  */
+-(function (plan, makeXray) {
++(function (plan, makeXray, makePowers, originalPower) {
+   'use strict';
+   var ids = new WeakMap(), frameIDs = new WeakMap(), nextID = 1, nextFrame = 1;
+   var stable = null, planned = null, pending = null, route = null, generation = null, confirmed = 0, cardsRead = 0, cardTypesRead = 0;
+   var observedMissionKey=null, missionState={status:'unavailable'};
+   var xrayDepth=1, planningState={state:'blocked',nodes:0,slices:0}, xray = null, xrayWanted = false, xrayState = {status:'off',coveredIcons:0,matchedBorders:0};
+   try { if (typeof makeXray === 'function') xray = makeXray(); } catch (_) {}
++  var powers=null, preferenceKey=null;
++  try { if(typeof makePowers==='function')powers=makePowers(originalPower); }catch(_){}
+   var LIMITS = { nodes: 4096, children: 512, cards: 512, depth: 24, components: 32, budgetMs: 18 };
+   var rejection = null, animationDetail = null, cardRuleDetail = null, started = 0;
+   function object(x) { return x !== null && (typeof x === 'object' || typeof x === 'function'); }
+@@ -30,8 +32,9 @@
+     return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
+   function result(status, reason, dispatched) { var output = { version: 1, status: status, reason: reason,
+     cardsRead: cardsRead, cardTypesRead: cardTypesRead, confirmedMoves: confirmed, dispatched: dispatched === true,
+-    awaitingBoardChange: pending !== null };
++    awaitingBoardChange: pending !== null || !!(powers && powers.busy()) };
+     output.xray = xrayState; output.planning=Object.assign({},planningState,{mission:missionState});
++    output.powers=powers?powers.diagnostic():{status:'unavailable',confirmed:0};
+     if (animationDetail) output.animationDetail = animationDetail;
+     if (cardRuleDetail) output.cardRuleDetail = cardRuleDetail;
+     return output; }
+@@ -203,11 +206,14 @@
+     var stats=object(decision) && object(decision.stats) ? decision.stats : {};
+     planningState={state:state,nodes:num(stats.expanded) ? Math.max(0,Math.min(1000000,Math.floor(stats.expanded))) : 0,
+       slices:num(stats.slices) ? Math.max(0,Math.min(1000000,Math.floor(stats.slices))) : 0};
++    ['lookaheadDepth','lookaheadTriples','lookaheadNodes','lookaheadSlices'].forEach(function(k){
++      if(integer(stats[k],0,12000))planningState[k]=stats[k];
++    });
+     if (['searching','priority','fallback'].indexOf(stats.missionStatus)>=0 && missionState.status!=='unavailable' && missionState.status!=='complete')
+       missionState.status=stats.missionStatus;
+-    if (stats.goal === 'next_trio') planningState.goal=stats.goal;
++    if (stats.goal === 'next_trio' || stats.goal === 'multi_trio') planningState.goal=stats.goal;
+     if (num(stats.residualCards)) planningState.residualCards=Math.max(0,Math.min(512,Math.floor(stats.residualCards)));
+-    if (route) { planningState.goal='next_trio'; planningState.residualCards=route.residualCards; }
++    if (route) { planningState.goal=stats.goal==='multi_trio'?'multi_trio':'next_trio'; planningState.residualCards=route.residualCards; }
+   }
+   function ownData(o,key) {
+     if (!object(o)) return undefined;
+@@ -462,19 +468,34 @@
+     missionState={status:'unavailable'};
+     rejection = null; animationDetail = null; cardRuleDetail = null; started = clock(); cardsRead = 0; cardTypesRead = 0;
+     var command = options.command || 'tick';
++    var stabilityMs=options.turboEnabled===true?40:80;
++    var preferences=JSON.stringify([options.extendedPlanning===true,options.turboEnabled===true,options.powersEnabled===true]);
++    if(preferences!==preferenceKey){preferenceKey=preferences;stable=null;planned=null;route=null;}
+     if (command !== 'tick' && command !== 'pause' && command !== 'reset') { clearXray('blocked'); return result('blocked','invalid_command'); }
+     if (options.resumeGeneration !== generation) {
+       generation = options.resumeGeneration; stable = null; planned = null; route=null; planningState={state:'blocked',nodes:0,slices:0}; clearXray(xrayWanted ? 'blocked' : 'off');
+       if (pending) { pending.confirmation=null; pending.replacement=null; }
+     }
+     if (command !== 'tick') {
++      if(powers)powers.freeze();
+       clearXray('off'); stable = null; planned = null; route=null;
+       if (pending) { pending.confirmation=null; pending.replacement=null; }
+       return result('paused',pending ? 'pending_preserved' : 'user_paused');
+     }
+     if (typeof plan !== 'function') { clearXray(xrayWanted ? 'unavailable' : 'off'); return result('blocked','planner_unavailable'); }
+     try {
++      if(powers && powers.needsPopup()){
++        clearXray(xrayWanted?'blocked':'off');
++        var popupResult=powers.tick(options,null);
++        return result(popupResult.status,popupResult.reason,popupResult.dispatched);
++      }
+       var s = snapshot(), now = clock();
++      if(powers && powers.busy()){
++        planned=null;route=null;stable=null;showXray(s,null);
++        if(s.actionRejection){powers.freeze();cardRuleDetail=s.actionRejection.detail;return result('blocked',s.actionRejection.reason);}
++        var powerResult=powers.tick(options,s);
++        return result(powerResult.status,powerResult.reason,powerResult.dispatched);
++      }
+       if(observedMissionKey!==s.missionKey){
+         // Invalidate prepared actions, not the uncertain original action.
+         observedMissionKey=s.missionKey;planned=null;route=null;planningState={state:'blocked',nodes:0,slices:0};
+@@ -499,7 +520,7 @@
+           if (!pending.replacement || pending.replacement.signature !== s.signature) {
+             pending.replacement={signature:s.signature,time:now}; return result('waiting_confirmation','new_board_stability');
+           }
+-          if (now-pending.replacement.time < 80) return result('waiting_confirmation','new_board_stability');
++          if (now-pending.replacement.time < stabilityMs) return result('waiting_confirmation','new_board_stability');
+           stable={signature:s.signature,time:pending.replacement.time};
+           pending=null; planned=null; route=null; return result('watching','new_board_detected');
+         }
+@@ -508,28 +529,31 @@
+           if (!pending.confirmation || pending.confirmation.signature !== s.signature) {
+             pending.confirmation={signature:s.signature,time:now}; return result('waiting_confirmation','confirm_stability');
+           }
+-          if (now-pending.confirmation.time < 80) return result('waiting_confirmation','confirm_stability');
++          if (now-pending.confirmation.time < stabilityMs) return result('waiting_confirmation','confirm_stability');
+           stable={signature:s.signature,time:pending.confirmation.time};
+           if (route && route.sequence[0] === pending.card.id) { route.sequence.shift(); route=validateRoute(s,route); } else route=null;
+-          pending=null; planned=null; confirmed=Math.min(10000,confirmed+1); showXray(s,route); return result('move_confirmed','board_change_confirmed');
++          pending=null; planned=null; if(powers)powers.normalConfirmed(); confirmed=Math.min(10000,confirmed+1); showXray(s,route); return result('move_confirmed','board_change_confirmed');
+         }
+         pending.confirmation=null;
+         return result('waiting_confirmation',now-pending.time > 8000 ? 'confirmation_uncertain' : 'awaiting_original_result');
+       }
+       if (options.allowAction !== true && !xrayWanted) { stable=null; planned=null; route=null; return result('watching','action_disabled'); }
+       if (!stable || stable.signature !== s.signature) { planned=null; stable={signature:s.signature,time:now}; showXray(s,null); return result('waiting_stability','observing_board'); }
+-      if (now-stable.time < 80) return result('waiting_stability','observing_board');
++      if (now-stable.time < stabilityMs) return result('waiting_stability','observing_board');
+       if (!planned) {
+         var clean=s.cards.map(function(c){return {id:c.id,type:c.type,zone:c.zone,x:c.x,y:c.y,order:c.order,blockedBy:c.blockedBy.slice(),available:c.available,selectable:c.selectable};});
+         route=route && validateRoute(s,route);
+         if (!route) {
+-          var decision=plan({cards:clean,tray:s.tray.map(function(c){return {id:c.id,type:c.type};}),capacity:s.capacity,matchSize:3,budgetMs:8,mission:s.mission?{type:s.mission.type,current:s.mission.current,total:s.mission.total}:null,stateKey:s.signature+'|'+String(generation)});
++          var decision=plan({cards:clean,tray:s.tray.map(function(c){return {id:c.id,type:c.type};}),capacity:s.capacity,matchSize:3,budgetMs:8,extendedPlanning:options.extendedPlanning===true,mission:s.mission?{type:s.mission.type,current:s.mission.current,total:s.mission.total}:null,stateKey:s.signature+'|'+String(generation)});
+           if (object(decision) && decision.status === 'searching' && decision.reason === 'search_in_progress') {
+             plannerDiagnostic(decision,'searching'); showXray(s,null); return result('planning','search_in_progress');
+           }
+           if (!object(decision) || decision.status !== 'move' || typeof decision.cardID !== 'string') {
+             plannerDiagnostic(decision,'blocked'); showXray(s,null);
+             var reasons=['observed_state_unbalanced','observed_state_locked','no_complete_solution','search_limit_reached','board_clear','no_remaining_triples','invalid_state'];
++            if(powers && !pending && powers.begin(s,options,object(decision)?decision.reason:null)){
++              stable=null;planned=null;route=null;return result('original_event_dispatched','power_popup_opened',true);
++            }
+             return result('blocked',object(decision) && reasons.indexOf(decision.reason) >= 0 ? decision.reason : 'no_safe_move');
+           }
+           if (!Array.isArray(decision.actions) || JSON.stringify(decision.actions) !== JSON.stringify(decision.sequence) ||
+@@ -569,6 +593,7 @@
+       catch (_) { return result('dispatch_uncertain','event_exception',true); }
+       return result('original_event_dispatched','awaiting_original_result',true);
+     } catch (_) {
++      if(powers)powers.freeze();
+       if (pending) {
+         if (rejection === 'modal_visible') pending.sawModal=true;
+         // An incomplete snapshot breaks consecutiveness of the proof, even
+--- a/Sources/SDKtools/STAutoplayBridge.inc
++++ b/Sources/SDKtools/STAutoplayBridge.inc
+@@ -37,6 +37,9 @@
+ - (BOOL)performAutoplayStepInWebView:(WKWebView *)webView
+                   resumeGeneration:(NSUInteger)resumeGeneration
+                        allowAction:(BOOL)allowAction
++                      turboEnabled:(BOOL)turboEnabled
++                  extendedPlanning:(BOOL)extendedPlanning
++                     powersEnabled:(BOOL)powersEnabled
+                        xrayEnabled:(BOOL)xrayEnabled
+                          xrayDepth:(NSInteger)xrayDepth
+                    validateContext:(BOOL (^)(void))validateContext
+@@ -45,7 +48,7 @@
+     NSString *rejection = nil;
+     if (self.inFlight) rejection = @"physical_operation_pending";
+     else if (self.cleanupQueue.count) { [self drainCleanup]; rejection = @"cleanup_pending"; }
+-    else if (!self.autoplayScript.length || !self.plannerScript.length) rejection = @"action_script_missing";
++    else if (!self.autoplayScript.length || !self.plannerScript.length || !self.extendedScript.length || !self.autopowersScript.length || !self.returnScript.length) rejection = @"action_script_missing";
+     else if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
+         !webView.window || webView.hidden || webView.alpha < 0.01 || !validateContext()) rejection = @"native_context_unavailable";
+     if (rejection) {
+@@ -68,9 +71,9 @@
+     // keeping its latch across pause/resume prevents duplicate uncertain shots.
+     NSString *candidateID = NSUUID.UUID.UUIDString;
+     NSString *wrapped = [NSString stringWithFormat:
+-        @"(function(){var k='%@',d=Object.getOwnPropertyDescriptor(window,k),s=d&&d.value;if(!s||s.owner!==k||typeof s.runtime!=='function'){if(d)return null;s=Object.freeze({owner:k,documentID:'%@',runtime:(%@)((%@),(%@))});Object.defineProperty(window,k,{value:s,configurable:true,enumerable:false,writable:false});}var o=s.runtime({command:'tick',allowAction:%@,xrayEnabled:%@,xrayDepth:%ld,resumeGeneration:%lu});if(!o||typeof o!=='object')return null;o.runtimeDocumentID=s.documentID;return o;})()",
+-        context.namespaceKey, candidateID, self.autoplayScript, self.plannerScript, self.xrayScript ?: @"null",
+-        allowAction ? @"true" : @"false", xrayEnabled ? @"true" : @"false",
++        @"(function(){var k='%@',d=Object.getOwnPropertyDescriptor(window,k),s=d&&d.value;if(!s||s.owner!==k||typeof s.runtime!=='function'){if(d)return null;s=Object.freeze({owner:k,documentID:'%@',runtime:(%@)((%@)((%@)),(%@),(%@),(%@))});Object.defineProperty(window,k,{value:s,configurable:true,enumerable:false,writable:false});}var o=s.runtime({command:'tick',allowAction:%@,turboEnabled:%@,extendedPlanning:%@,powersEnabled:%@,xrayEnabled:%@,xrayDepth:%ld,resumeGeneration:%lu});if(!o||typeof o!=='object')return null;o.runtimeDocumentID=s.documentID;return o;})()",
++        context.namespaceKey, candidateID, self.autoplayScript, self.extendedScript, self.plannerScript, self.xrayScript ?: @"null", self.autopowersScript, self.returnScript,
++        allowAction ? @"true" : @"false", turboEnabled ? @"true" : @"false", extendedPlanning ? @"true" : @"false", powersEnabled ? @"true" : @"false", xrayEnabled ? @"true" : @"false",
+         (long)MAX((NSInteger)1, MIN((NSInteger)5, xrayDepth)), (unsigned long)resumeGeneration];
+     self.inFlight = YES;
+     self.cleaning = NO;
+--- a/Sources/SDKtools/STAutoplayRecorder.inc
++++ b/Sources/SDKtools/STAutoplayRecorder.inc
+@@ -24,6 +24,9 @@
+     entry[@"enabled"] = @(self.autoplayEnabled);
+     entry[@"xrayEnabled"] = @(self.xrayEnabled);
+     entry[@"xrayDepth"] = @(self.xrayDepth);
++    entry[@"turboEnabled"] = @(self.turboEnabled);
++    entry[@"extendedPlanning"] = @(self.extendedPlanning);
++    entry[@"powersEnabled"] = @(self.powersEnabled);
+     entry[@"physicalPending"] = @(self.autoplayBusy);
+     if (self.autoplayEvents.count >= 96) [self.autoplayEvents removeObjectAtIndex:0];
+     [self.autoplayEvents addObject:[entry copy]];
+@@ -31,6 +34,7 @@
+ 
+ - (NSString *)autoplayStatusText {
+     if (!self.autoplayEnabled) {
++        if (self.autoplayPowerContextLost) return @"Auto pausado: poder pendente perdeu a tela; confira a partida e reinicie o app";
+         if (self.autoplayBusy) return @"Auto pausando: aguardando a ação enviada";
+         if ([self.autoplayReason isEqual:@"manual_touch"]) return @"Auto pausado pelo seu toque";
+         if ([self.autoplayReason isEqual:@"recording_started"]) return @"Auto pausado para a captura";
+@@ -72,6 +76,13 @@
+     else if ([missionStatus isEqual:@"complete"]) missionLabel = @"missão atingida: aguardando jogo";
+     if (missionLabel && ![self.autoplayStatus isEqual:@"blocked"] && ![self.autoplayStatus isEqual:@"dispatch_uncertain"])
+         label = [label stringByAppendingFormat:@" · %@", missionLabel];
++    if (self.extendedPlanning) label = [label stringByAppendingString:@" · plano ampliado"];
++    if (self.turboEnabled) label = [label stringByAppendingString:@" · Turbo"];
++    if (self.powersEnabled) {
++        NSString *powerStatus = self.autoplayPowersDiagnostic[@"status"];
++        label = [label stringByAppendingString:[powerStatus isEqual:@"uncertain"] ? @" · poder: conferir partida" :
++            [@[@"opening", @"submitted"] containsObject:powerStatus] ? @" · aguardando poder" : @" · poderes habilitados"];
++    }
+     return [NSString stringWithFormat:@"%@ · %lu cartas · %lu jogadas", label,
+         (unsigned long)self.autoplayCardsRead, (unsigned long)self.autoplayConfirmedMoves];
+ }
+@@ -93,7 +104,7 @@
+ - (void)ensureAutoplayTimer {
+     if (self.autoplayTimer || (!self.autoplayEnabled && !self.xrayEnabled)) return;
+     __weak STRecorder *weakSelf = self;
+-    self.autoplayTimer = [NSTimer timerWithTimeInterval:0.1 repeats:YES block:^(__unused NSTimer *timer) {
++    self.autoplayTimer = [NSTimer timerWithTimeInterval:(self.turboEnabled ? 0.04 : 0.1) repeats:YES block:^(__unused NSTimer *timer) {
+         [weakSelf autoplayTick];
+     }];
+     self.autoplayTimer.tolerance = 0.01;
+@@ -130,9 +141,27 @@
+     [self notifyChange];
+ }
+ 
++// Preferences never start play and never reset a submitted JS action latch.
++- (void)setTurboEnabled:(BOOL)enabled {
++    NSAssert(NSThread.isMainThread, @"Main thread");
++    if (_turboEnabled == enabled) return;
++    _turboEnabled = enabled;
++    [self.autoplayTimer invalidate]; self.autoplayTimer = nil;
++    [self ensureAutoplayTimer]; [self notifyChange];
++}
++- (void)setExtendedPlanning:(BOOL)enabled {
++    NSAssert(NSThread.isMainThread, @"Main thread");
++    _extendedPlanning = enabled; [self notifyChange];
++}
++- (void)setPowersEnabled:(BOOL)enabled {
++    NSAssert(NSThread.isMainThread, @"Main thread");
++    _powersEnabled = enabled; [self notifyChange];
++}
++
+ - (BOOL)startAutoplay {
+     NSAssert(NSThread.isMainThread, @"STRecorder requires the main thread");
+     if (self.autoplayEnabled) return YES;
++    if (self.autoplayPowerContextLost) return NO;
+     if (!self.autoplayStartedAt) self.autoplayStartedAt = STNow();
+     if (self.warehouseTestActive || self.cardHintsEnabled || self.cardHintsBusy || self.autoplayBusy || self.returnActionBusy || self.sourceExportBusy || self.detectedGameDetectionActive) return NO;
+     if (self.isRecording || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
+@@ -208,7 +237,7 @@
+     __weak UIWindow *weakWindow = webView.window;
+     __weak STRecorder *weakSelf = self;
+     [self.webProbe performAutoplayStepInWebView:webView resumeGeneration:self.autoplayResumeGeneration
+-        allowAction:actionAllowed xrayEnabled:self.xrayEnabled xrayDepth:self.xrayDepth validateContext:^BOOL {
++        allowAction:actionAllowed turboEnabled:self.turboEnabled extendedPlanning:self.extendedPlanning powersEnabled:self.powersEnabled xrayEnabled:self.xrayEnabled xrayDepth:self.xrayDepth validateContext:^BOOL {
+         STRecorder *strongSelf = weakSelf;
+         WKWebView *expected = weakWebView;
+         if (!strongSelf || !expected || !weakWindow || strongSelf.actionContextGeneration != nativeGeneration ||
+@@ -222,6 +251,15 @@
+         strongSelf.autoplayBusy = [result[@"physicalPending"] boolValue];
+         NSString *status = result[@"status"] ?: @"dispatch_uncertain";
+         NSString *resultReason = result[@"reason"] ?: @"invalid_result";
++        NSString *runtimeView = result[@"runtimeWebViewID"], *runtimeDocument = result[@"runtimeContextID"];
++        if (runtimeView && runtimeDocument && strongSelf.autoplayPowerBoundView &&
++            (![strongSelf.autoplayPowerBoundView isEqual:runtimeView] || ![strongSelf.autoplayPowerBoundDocument isEqual:runtimeDocument]) &&
++            [@[@"opening", @"submitted", @"uncertain"] containsObject:strongSelf.autoplayPowersDiagnostic[@"status"]]) {
++            // The new JS closure cannot retain the old document's uncertain
++            // power latch. Stop before its fresh stability cycle can dispatch.
++            strongSelf.autoplayPowerContextLost = YES;
++            [strongSelf pauseAutoplayWithReason:@"uncertain_result"];
++        }
+         if ([@[@"physical_operation_pending", @"cleanup_pending"] containsObject:resultReason]) return;
+         BOOL changed = actionAllowed && (![strongSelf.autoplayStatus isEqual:status] || ![strongSelf.autoplayReason isEqual:resultReason]);
+         // The result has already crossed the closed-field sanitizer. Persist the
+@@ -238,6 +276,16 @@
+         NSDictionary *nextPlanning = [result[@"planning"] isKindOfClass:NSDictionary.class] ? result[@"planning"] : @{};
+         if (![(strongSelf.autoplayPlanningDiagnostic[@"mission"] ?: @{}) isEqual:(nextPlanning[@"mission"] ?: @{})]) changed = YES;
+         strongSelf.autoplayPlanningDiagnostic = nextPlanning;
++        NSDictionary *powerInfo = [result[@"powers"] isKindOfClass:NSDictionary.class] ? result[@"powers"] : @{};
++        if (![strongSelf.autoplayPowersDiagnostic isEqual:powerInfo]) changed = YES;
++        strongSelf.autoplayPowersDiagnostic = powerInfo;
++        if ([@[@"opening", @"submitted", @"uncertain"] containsObject:powerInfo[@"status"]] && !strongSelf.autoplayPowerContextLost) {
++            strongSelf.autoplayPowerBoundView = runtimeView;
++            strongSelf.autoplayPowerBoundDocument = runtimeDocument;
++        } else if (![@[@"opening", @"submitted", @"uncertain"] containsObject:powerInfo[@"status"]]) {
++            strongSelf.autoplayPowerBoundView = nil;
++            strongSelf.autoplayPowerBoundDocument = nil;
++        }
+         if ([result[@"xray"] isKindOfClass:NSDictionary.class]) {
+             NSDictionary *visual = strongSelf.xrayEnabled ? result[@"xray"] : @{@"status": @"off", @"coveredIcons": @0, @"matchedBorders": @0};
+             if (![strongSelf.xrayDiagnostic isEqual:visual]) changed = YES;
+--- a/Sources/SDKtools/STAutoplaySanitizer.inc
++++ b/Sources/SDKtools/STAutoplaySanitizer.inc
+@@ -37,7 +37,10 @@
+         @"plan_ready", @"planner_invalid_move", @"planner_unavailable", @"read_error", @"scan_limit", @"sprite_unavailable",
+         @"time_budget", @"tray_full", @"tray_unverified", @"unknown_card", @"user_paused",
+         @"search_in_progress", @"observed_state_unbalanced", @"observed_state_locked", @"no_complete_solution",
+-        @"search_limit_reached", @"unsupported_card_rules", @"external_mode_active", @"board_clear", @"no_remaining_triples"];
++        @"search_limit_reached", @"unsupported_card_rules", @"external_mode_active", @"board_clear", @"no_remaining_triples",
++        @"power_popup_opened", @"power_requested", @"power_effect_confirmed", @"power_effect_pending", @"power_effect_stability",
++        @"power_context_unavailable", @"power_context_changed", @"power_paused", @"power_confirmation_uncertain",
++        @"power_popup_pending", @"power_popup_mismatch", @"power_dispatch_uncertain"];
+     if (![reasons containsObject:reason]) reason = @"unrecognized_reason";
+     if ([value[@"dispatched"] boolValue] && ![status isEqual:@"original_event_dispatched"] && ![status isEqual:@"dispatch_uncertain"])
+         return STWPAutoResult(@"dispatch_uncertain", @"inconsistent_result", NO);
+@@ -75,7 +78,9 @@
+         [@[@"searching", @"proved", @"blocked"] containsObject:planning[@"state"]] &&
+         STWPAutoCount(planning[@"nodes"], 1000000) && STWPAutoCount(planning[@"slices"], 1000000)) {
+         NSMutableDictionary *progress = [@{@"state": planning[@"state"], @"nodes": planning[@"nodes"], @"slices": planning[@"slices"]} mutableCopy];
+-        if ([@[@"clear_board", @"all_observed_triples", @"next_trio"] containsObject:planning[@"goal"]]) progress[@"goal"] = planning[@"goal"];
++        if ([@[@"clear_board", @"all_observed_triples", @"next_trio", @"multi_trio"] containsObject:planning[@"goal"]]) progress[@"goal"] = planning[@"goal"];
++        for (NSString *key in @[@"lookaheadDepth", @"lookaheadTriples", @"lookaheadNodes", @"lookaheadSlices"])
++            if (STWPAutoCount(planning[key], 12000)) progress[key] = planning[key];
+         if (STWPAutoCount(planning[@"residualCards"], 512)) progress[@"residualCards"] = planning[@"residualCards"];
+         id mission = planning[@"mission"];
+         if ([mission isKindOfClass:NSDictionary.class] &&
+@@ -92,6 +97,14 @@
+         }
+         safe[@"planning"] = [progress copy];
+     }
++    id powers = value[@"powers"];
++    if ([powers isKindOfClass:NSDictionary.class] &&
++        [@[@"off", @"ready", @"unavailable", @"opening", @"submitted", @"uncertain", @"confirmed"] containsObject:powers[@"status"]] &&
++        STWPAutoCount(powers[@"confirmed"], 1000000)) {
++        NSMutableDictionary *powerInfo = [@{@"status": powers[@"status"], @"confirmed": powers[@"confirmed"]} mutableCopy];
++        if (STWPAutoCount(powers[@"type"], 2)) powerInfo[@"type"] = powers[@"type"];
++        safe[@"powers"] = powerInfo;
++    }
+     return [safe copy];
+ }
+ 
+--- a/Sources/SDKtools/STBilliardsResourceExporter.m
++++ b/Sources/SDKtools/STBilliardsResourceExporter.m
+@@ -289,7 +289,7 @@
+         @"filesChanged":@(changedFiles),@"bytesExported":@(bytesExported),@"entriesVisited":@(budget.visited),
+         @"truncated":@(budget.truncated),@"errorCode":@0};
+     if(diagnostic)*diagnostic=diag;
+-    return @{@"format":@"SDKtools.BilliardsResources",@"schema":@"SDKtools.BilliardsResources",@"schemaVersion":@1,@"toolVersion":@"3.19.9",@"outcome":outcome,
++    return @{@"format":@"SDKtools.BilliardsResources",@"schema":@"SDKtools.BilliardsResources",@"schemaVersion":@1,@"toolVersion":@"3.20.0",@"outcome":outcome,
+         @"currentMatchIdentified":@NO,@"nativeGameType":NSNull.null,@"sceneType":NSNull.null,
+         @"billiardsPredictionAvailable":@NO,@"collectionMode":@"local_cached_catalogs",
+         @"catalogSelection":@"all_bounded_candidates_no_active_catalog_assumption",@"diagnostic":diag,
+--- a/Sources/SDKtools/STBilliardsRuntime.m
++++ b/Sources/SDKtools/STBilliardsRuntime.m
+@@ -530,7 +530,7 @@
+     if (!NSThread.isMainThread) { if(error)*error=STBLError(3,@"Exporte pelo menu do jogo."); return nil; }
+     [self stopWithReason:@"export"];
+     if (!self.lastSnapshot.count) { if(error)*error=STBLError(4,@"Ative o bilhar antes de exportar o diagnóstico."); return nil; }
+-    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.19.9",
++    NSDictionary *report=@{@"format":@"SDKtools.BilliardsLiveCapture",@"schemaVersion":@1,@"toolVersion":@"3.20.0",
+         @"createdUTC":[NSISO8601DateFormatter.new stringFromDate:NSDate.date],@"lastSnapshot":self.lastSnapshot,
+         @"lastAimBeforeMotion":self.lastAimBeforeMotion ?: (id)NSNull.null,
+         @"lastShotObservation":self.lastShotObservation ?: (id)NSNull.null,
+--- a/Sources/SDKtools/STGameSourceExporter.m
++++ b/Sources/SDKtools/STGameSourceExporter.m
+@@ -194,7 +194,7 @@
+         if(written){included++;totalSource+=size;}
+     }}
+     BOOL complete=!skipped.count&&!inventory->timedOut&&!inventory->entryLimit&&!inventory->excessiveDepth&&!inventory->excessiveCandidates&&!inventory->errors&&!inventory->symlinks&&!inventory->other;
+-    NSDictionary *metadata=@{@"format":@"SDKtools.GameSources",@"schemaVersion":@1,@"toolVersion":@"3.19.9",
++    NSDictionary *metadata=@{@"format":@"SDKtools.GameSources",@"schemaVersion":@1,@"toolVersion":@"3.20.0",
+         @"gameID":@(observedGameType),@"gameIdentitySource":@"caller_verified_native_controller",@"application":@{@"bundleIdentifier":@"com.wejoy.weplay.us",@"version":@"6.6.2",@"build":@"132"},
+         @"rootScope":[NSString stringWithFormat:@"verified_current_game_package_under_%@/littleGame",storageRoot],@"entryRelativePath":@"index.html",
+         @"pathDiagnostic":pathDiagnostic,@"rootSelection":nativeResourceURL?@"original_game60_native_resource_and_current_document":(observedGameType==60?@"current_document_known_game60_folder":@"current_document_game2007_exact_folder_policy"),
+--- a/Sources/SDKtools/STOverlay.m
++++ b/Sources/SDKtools/STOverlay.m
+@@ -72,6 +72,9 @@
+ - (void)confirmPower;
+ - (void)performPowerSlot:(NSString *)slot command:(NSString *)command;
+ - (void)toggleAutoplay;
++- (void)toggleTurbo;
++- (void)toggleExtendedPlanning;
++- (void)toggleAutoPowers;
+ - (void)traceCardEntry;
+ - (void)toggleCardHints;
+ - (void)sampleCardMenuNow;
+@@ -134,6 +137,9 @@
+ @property (nonatomic, strong) UIButton *autoplayButton;
+ @property (nonatomic, strong) UILabel *autoplayLabel;
+ @property (nonatomic, strong) UISwitch *xraySwitch;
++@property (nonatomic, strong) UISwitch *turboSwitch;
++@property (nonatomic, strong) UISwitch *planningSwitch;
++@property (nonatomic, strong) UISwitch *powersSwitch;
+ @property (nonatomic, strong) UIButton *diagnosticButton;
+ @property (nonatomic, strong) UILabel *diagnosticLabel;
+ @property (nonatomic, strong) UIButton *identifyGameButton;
+@@ -270,7 +276,7 @@
+     heading.axis = UILayoutConstraintAxisVertical;
+     heading.spacing = 2;
+     [heading addArrangedSubview:[self label:@"SDKtools" size:23 weight:UIFontWeightBold color:UIColor.whiteColor]];
+-    [heading addArrangedSubview:[self label:@"V3.19.9 · Alpaca, Bilhar e Cartas" size:11 weight:UIFontWeightMedium color:STOrange()]];
++    [heading addArrangedSubview:[self label:@"V3.20.0 · Alpaca, Bilhar e Cartas" size:11 weight:UIFontWeightMedium color:STOrange()]];
+     [header addArrangedSubview:heading];
+     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+     [close setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+@@ -298,6 +304,23 @@
+     [alpaca addArrangedSubview:self.autoplayButton];
+     self.autoplayLabel = [self label:@"Auto pausado" size:12 weight:UIFontWeightMedium color:STMuted()];
+     [alpaca addArrangedSubview:self.autoplayLabel];
++
++    NSArray *modeNames = @[@"Turbo", @"Planejamento maior", @"Habilitar uso de poderes"];
++    NSArray *modeActions = @[@"toggleTurbo", @"toggleExtendedPlanning", @"toggleAutoPowers"];
++    NSMutableArray *modeSwitches = [NSMutableArray array];
++    for (NSUInteger i = 0; i < modeNames.count; i++) {
++        UIStackView *row = [UIStackView new]; row.axis = UILayoutConstraintAxisHorizontal;
++        row.alignment = UIStackViewAlignmentCenter;
++        [row addArrangedSubview:[self label:modeNames[i] size:14 weight:UIFontWeightSemibold color:UIColor.whiteColor]];
++        UISwitch *control = [UISwitch new]; control.onTintColor = STOrange(); control.accessibilityLabel = modeNames[i];
++        [control addTarget:self.owner action:NSSelectorFromString(modeActions[i]) forControlEvents:UIControlEventValueChanged];
++        [row addArrangedSubview:control]; [modeSwitches addObject:control];
++        [row.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES; [alpaca addArrangedSubview:row];
++    }
++    self.turboSwitch = modeSwitches[0]; self.planningSwitch = modeSwitches[1]; self.powersSwitch = modeSwitches[2];
++    self.powersSwitch.accessibilityHint = @"Autoriza consumir Reserva, Desfazer ou Embaralhar existentes quando não houver trio seguro. Nunca compra poderes.";
++    [alpaca addArrangedSubview:[self label:@"Opções independentes. Ative e toque Iniciar autoplay. Poderes consomem seu estoque; sem compras automáticas."
++        size:11 weight:UIFontWeightRegular color:STMuted()]];
+ 
+     UIStackView *xrayRow = [UIStackView new];
+     xrayRow.axis = UILayoutConstraintAxisHorizontal;
+@@ -346,6 +369,9 @@
+     self.warehouseTestCancelButton = [self button:@"Encerrar teste do armazém" symbol:@"xmark.circle" action:@selector(cancelWarehouseTest) primary:NO];
+     [alpaca addArrangedSubview:self.warehouseTestCancelButton];
+     self.warehouseTestLabel = [self label:@"Teste experimental: sem promessa de desbloqueio." size:11 weight:UIFontWeightRegular color:STOrange()];
++    self.warehouseTestButton.hidden = YES;
++    self.warehouseTestCancelButton.hidden = YES;
++    self.warehouseTestLabel.hidden = YES;
+     [alpaca addArrangedSubview:self.warehouseTestLabel];
+     [alpaca addArrangedSubview:[self label:@"Poderes da partida" size:12 weight:UIFontWeightSemibold color:STMuted()]];
+     self.leftPowerButton = [self button:@"Esquerdo" symbol:@"tray" action:@selector(openLeftPower) primary:NO];
+@@ -588,6 +614,11 @@
+     BOOL transition = self.owner.videoState == STVideoStarting || self.owner.videoState == STVideoStopping;
+     BOOL presented = self.owner.pendingPreview || self.presentedViewController;
+     BOOL autoEnabled = recorder.autoplayEnabled, autoBusy = recorder.autoplayBusy;
++    [self.turboSwitch setOn:recorder.turboEnabled animated:NO];
++    [self.planningSwitch setOn:recorder.extendedPlanning animated:NO];
++    [self.powersSwitch setOn:recorder.powersEnabled animated:NO];
++    self.turboSwitch.enabled = self.planningSwitch.enabled = self.powersSwitch.enabled = !recording && !sourceBusy && !presented;
++    self.warehouseTestButton.hidden = YES; self.warehouseTestCancelButton.hidden = YES; self.warehouseTestLabel.hidden = YES;
+     BOOL idlePresentation = self.owner.videoState == STVideoIdle && !presented;
+     STSetLabelText(self.statusLabel, recorder.statusText ?: @"Diagnóstico parado");
+     self.cardEarlyButton.enabled=early || (!billiards && !recording && !detecting && !sourceBusy && !cardsBusy && !autoBusy && !recorder.returnActionBusy && idlePresentation);
+@@ -908,6 +939,10 @@
+     [self presentPendingSourceExport];
+     [self refresh];
+ }
++
++- (void)toggleTurbo { [STRecorder.shared setTurboEnabled:self.controller.turboSwitch.isOn]; [self refresh]; }
++- (void)toggleExtendedPlanning { [STRecorder.shared setExtendedPlanning:self.controller.planningSwitch.isOn]; [self refresh]; }
++- (void)toggleAutoPowers { [STRecorder.shared setPowersEnabled:self.controller.powersSwitch.isOn]; [self refresh]; }
+ 
+ - (void)toggleAutoplay {
+     if (STBilliardsRuntime.shared.enabled) { [self showNotice:@"Desative a leitura do bilhar para usar o Alpaca."]; return; }
+--- a/Sources/SDKtools/STRecorder.h
++++ b/Sources/SDKtools/STRecorder.h
+@@ -18,6 +18,9 @@
+ @property (nonatomic, readonly) BOOL returnActionBusy;
+ @property (nonatomic, copy, readonly) NSString *returnActionStatus;
+ @property (nonatomic, readonly) BOOL autoplayEnabled;
++@property (nonatomic, readonly) BOOL turboEnabled;
++@property (nonatomic, readonly) BOOL extendedPlanning;
++@property (nonatomic, readonly) BOOL powersEnabled;
+ @property (nonatomic, readonly) BOOL autoplayBusy;
+ @property (nonatomic, readonly) NSUInteger autoplayCardsRead;
+ @property (nonatomic, readonly) NSUInteger autoplayCardTypesRead;
+@@ -61,6 +64,9 @@
+ - (BOOL)openOwnWarehouseWithUpdate:(void (^)(NSDictionary<NSString *, id> *result))update;
+ /// Explicit play/resume. Independent of recording; manual input and background
+ /// pause scheduling. A previously submitted physical operation may still finish.
++- (void)setTurboEnabled:(BOOL)enabled;
++- (void)setExtendedPlanning:(BOOL)enabled;
++- (void)setPowersEnabled:(BOOL)enabled;
+ - (BOOL)startAutoplay;
+ - (void)pauseAutoplayWithReason:(NSString *)reason;
+ /// Opens one original power or confirms the currently visible original popup.
+--- a/Sources/SDKtools/STRecorder.m
++++ b/Sources/SDKtools/STRecorder.m
+@@ -479,6 +479,13 @@
+ @property (nonatomic) BOOL sourceExportAttempted;
+ @property (nonatomic, copy, readwrite) NSDictionary *billiardsResourceExportDiagnostic;
+ @property (nonatomic, readwrite) BOOL autoplayEnabled;
++@property (nonatomic, readwrite) BOOL turboEnabled;
++@property (nonatomic, readwrite) BOOL extendedPlanning;
++@property (nonatomic, readwrite) BOOL powersEnabled;
++@property (nonatomic, copy) NSDictionary *autoplayPowersDiagnostic;
++@property (nonatomic) BOOL autoplayPowerContextLost;
++@property (nonatomic, copy) NSString *autoplayPowerBoundView;
++@property (nonatomic, copy) NSString *autoplayPowerBoundDocument;
+ @property (nonatomic, readwrite) BOOL xrayEnabled;
+ @property (nonatomic) BOOL cardHintsRequested;
+ @property (nonatomic, readwrite) BOOL cardHintsBusy;
+@@ -609,6 +616,8 @@
+         _autoplayStatus = @"paused";
+         NSInteger storedDepth = [NSUserDefaults.standardUserDefaults integerForKey:@"SDKtools.xrayDepth"];
+         _xrayDepth = storedDepth >= 1 && storedDepth <= 5 ? storedDepth : 1;
++        _turboEnabled = NO; _extendedPlanning = NO; _powersEnabled = NO;
++        _autoplayPowersDiagnostic = @{ @"status": @"off", @"confirmed": @0 };
+         _xrayDiagnostic = @{@"status": @"off", @"coveredIcons": @0, @"matchedBorders": @0};
+         _autoplayPlanningDiagnostic = @{};
+         _warehouseTestDiagnostic = @{}; _warehouseTestEvents = [NSMutableArray array];
+@@ -1390,7 +1399,7 @@
+     }
+     NSTimeInterval duration = self.startedAt > 0 ? (self.isRecording ? STNow() : self.stoppedAt) - self.startedAt : 0;
+     NSDictionary *report = @{
+-        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.19.9",
++        @"format": @"SDKtools.Capture", @"schemaVersion": @3, @"toolVersion": @"3.20.0",
+         @"moduleAvailability": @{@"alpaca": @YES, @"cards": (ST_CARD_GAME_FEATURE_ENABLED ? @YES : @NO),
+             @"cardsStatus": ST_CARD_GAME_FEATURE_ENABLED ? @"available" : @"paused_by_owner", @"billiardsIdentified": @NO,
+             @"billiardsResourceExportAvailable": @YES, @"billiardsPredictionAvailable": @NO},
+@@ -1478,7 +1487,9 @@
+             @"nativeGate": STLastActionGateDiagnostics ?: @{}, @"temporaryNativeBlocksRetry": @YES,
+             @"eventsClock": @"processElapsedMs_since_recorder_initialization",
+             @"countingScope": @"confirmed_moves_observed_by_runtime_in_this_process",
+-            @"worksWithoutRecording": @YES, @"targetIntervalMs": @100, @"manualTouchPauses": @YES,
++            @"worksWithoutRecording": @YES, @"targetIntervalMs": self.turboEnabled ? @40 : @100,
++            @"turboEnabled": @(self.turboEnabled), @"extendedPlanning": @(self.extendedPlanning), @"powersEnabled": @(self.powersEnabled),
++            @"powers": self.autoplayPowersDiagnostic ?: @{}, @"manualTouchPauses": @YES,
+             @"plannedTripleRequired": @YES, @"completeObservedPlanRequired": @NO,
+             @"planningGoal": @"next_verified_trio_with_bounded_lookahead",
+             @"planning": self.autoplayPlanningDiagnostic,
+--- a/Sources/SDKtools/STWebProbe.h
++++ b/Sources/SDKtools/STWebProbe.h
+@@ -24,6 +24,9 @@
+ - (BOOL)performAutoplayStepInWebView:(WKWebView *)webView
+                   resumeGeneration:(NSUInteger)resumeGeneration
+                        allowAction:(BOOL)allowAction
++                      turboEnabled:(BOOL)turboEnabled
++                  extendedPlanning:(BOOL)extendedPlanning
++                     powersEnabled:(BOOL)powersEnabled
+                        xrayEnabled:(BOOL)xrayEnabled
+                          xrayDepth:(NSInteger)xrayDepth
+                    validateContext:(BOOL (^)(void))validateContext
+--- a/Sources/SDKtools/STWebProbe.m
++++ b/Sources/SDKtools/STWebProbe.m
+@@ -31,6 +31,8 @@
+ @property (nonatomic, copy) NSString *returnScript;
+ @property (nonatomic, copy) NSString *autoplayScript;
+ @property (nonatomic, copy) NSString *plannerScript;
++@property (nonatomic, copy) NSString *extendedScript;
++@property (nonatomic, copy) NSString *autopowersScript;
+ @property (nonatomic, copy) NSString *xrayScript;
+ @property (nonatomic, copy) NSString *warehouseScript;
+ @property (nonatomic, copy) NSString *warehouseTestScript;
+@@ -93,7 +95,7 @@
+         [returnURL getResourceValue:&returnSize forKey:NSURLFileSizeKey error:nil];
+         if (returnURL && returnSize.unsignedLongLongValue > 0 && returnSize.unsignedLongLongValue <= 65536)
+             _returnScript = [[NSString alloc] initWithContentsOfURL:returnURL encoding:NSUTF8StringEncoding error:nil];
+-        for (NSString *name in @[@"autoplay_tool", @"autoplay_planner", @"xray_overlay", @"warehouse_tool", @"warehouse_test", @"card_hints", @"card_probe", @"card_flow", @"card_root", @"card_sampler"]) {
++        for (NSString *name in @[@"autoplay_tool", @"autoplay_planner", @"autoplay_extended", @"autoplay_powers", @"xray_overlay", @"warehouse_tool", @"warehouse_test", @"card_hints", @"card_probe", @"card_flow", @"card_root", @"card_sampler"]) {
+             if (!ST_CARD_GAME_FEATURE_ENABLED && [name hasPrefix:@"card_"]) continue;
+             NSURL *resource = [bundle URLForResource:name withExtension:@"js"];
+             if (!resource) resource = [bundle URLForResource:name withExtension:@"js" subdirectory:@"Resources"];
+@@ -103,6 +105,8 @@
+                 NSString *source = [[NSString alloc] initWithContentsOfURL:resource encoding:NSUTF8StringEncoding error:nil];
+                 if ([name isEqual:@"autoplay_tool"]) _autoplayScript = source;
+                 else if ([name isEqual:@"autoplay_planner"]) _plannerScript = source;
++                else if ([name isEqual:@"autoplay_extended"]) _extendedScript = source;
++                else if ([name isEqual:@"autoplay_powers"]) _autopowersScript = source;
+                 else if ([name isEqual:@"xray_overlay"]) _xrayScript = source;
+                 else if ([name isEqual:@"card_hints"]) _cardHintsScript = source;
+                 else if ([name isEqual:@"card_probe"]) _cardInvestigationScript = source;
+--- a/Tests/autoplay_bridge_test.m
++++ b/Tests/autoplay_bridge_test.m
+@@ -30,6 +30,23 @@
+         @"responseObserved":@YES,@"slotEffectConfirmed":@NO,@"testedWhileLocked":@YES,@"attemptCount":@1,@"beforeLock":@3,@"afterLock":@3,@"serverCode":@200} mutableCopy];
+ }
+ int main(void) { @autoreleasepool {
++    for (NSString *status in @[@"off", @"ready", @"unavailable", @"opening", @"submitted", @"uncertain", @"confirmed"]) {
++        NSMutableDictionary *row = Result(@"watching", NO);
++        row[@"powers"] = @{@"status":status,@"confirmed":@2,@"type":@1,@"privateID":@"drop"};
++        NSDictionary *power = STWPSanitizeAutoplay(row)[@"powers"];
++        Check([power[@"status"] isEqual:status] && [power[@"confirmed"] isEqual:@2], @"power telemetry retained");
++        Check(!power[@"privateID"], @"no private stock ID exported");
++    }
++    for (id bad in @[@YES,@(-1),@1.5,@1000001,@"1"]) {
++        NSMutableDictionary *row = Result(@"original_event_dispatched", YES);
++        row[@"powers"] = @{@"status":@"submitted",@"confirmed":bad};
++        NSDictionary *safe = STWPSanitizeAutoplay(row);
++        Check(!safe[@"powers"] && [safe[@"dispatched"] boolValue], @"bad optional power data cannot erase a dispatch");
++    }
++    NSMutableDictionary *deep = Result(@"planning", NO);
++    deep[@"planning"] = @{@"state":@"searching",@"nodes":@3,@"slices":@1,@"goal":@"multi_trio",@"lookaheadDepth":@12,@"lookaheadNodes":@12000};
++    Check([STWPSanitizeAutoplay(deep)[@"planning"][@"goal"] isEqual:@"multi_trio"], @"multi-trio goal retained");
++    Check([STWPSanitizeAutoplay(deep)[@"planning"][@"lookaheadDepth"] isEqual:@12], @"lookahead telemetry retained");
+     NSDictionary *valid = STWPSanitizeAutoplay(Result(@"original_event_dispatched", YES));
+     Check([valid[@"status"] isEqual:@"original_event_dispatched"] && [valid[@"dispatched"] boolValue], @"one original event retained");
+     Check([valid[@"confirmedMoves"] isEqual:@3] && [valid[@"cardsRead"] isEqual:@217], @"bounded counters retained");
+--- a/Tests/autoplay_extended.test.cjs
++++ b/Tests/autoplay_extended.test.cjs
+@@ -0,0 +1,60 @@
++const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
++const read=n=>fs.readFileSync(path.join(__dirname,'../Resources/',n+'.js'),'utf8');
++function create(clock=()=>0){const context=vm.createContext({Date:{now:clock}});return vm.runInContext('('+read('autoplay_extended')+')(('+read('autoplay_planner')+'))',context);}
++const card=(id,type,blockedBy=[],extra={})=>({id,type,blockedBy,zone:'board',available:!blockedBy.length,...extra});
++const state=(cards,tray=[],extra={})=>({cards,tray:tray.map((type,i)=>({id:'tray'+i,type})),capacity:7,matchSize:3,extendedPlanning:true,...extra});
++function finish(input,fn=create()){for(let i=0;i<200;i++){const out=fn(input);if(out.status!=='searching')return JSON.parse(JSON.stringify(out));}throw Error('not bounded');}
++function replay(input,out){
++ const left=new Map(input.cards.map(c=>[c.id,c])),hand=input.tray.slice();let trios=0;
++ for(const id of out.sequence){const c=left.get(id);assert.ok(c);assert.notEqual(c.locked,true);assert.notEqual(c.selectable,false);
++  assert.ok(c.available||c.blockedBy.length);assert.ok(c.blockedBy.every(b=>!left.has(b)));left.delete(id);hand.push(c);assert.ok(hand.length<=7);
++  const match=hand.filter(h=>h.type===c.type);if(match.length===3){trios++;for(const m of match)hand.splice(hand.indexOf(m),1);}
++  assert.ok(hand.length<7);
++ }
++ assert.equal(trios,1);assert.equal(out.proofKind,'local_trio');assert.equal(out.cardID,out.sequence[0]);
++ assert.deepEqual(out.sequence,out.actions);assert.equal(out.tripleCardIDs.length,3);
++}
++test('off uses exactly the original planner result without multi-trio claims',()=>{
++ const input=state(['a','a','a'].map((t,i)=>card('c'+i,t)),[],{extendedPlanning:false}),out=finish(input);
++ assert.equal(out.status,'move');assert.equal(out.stats.goal,'next_trio');assert.equal(out.stats.lookaheadDepth,undefined);replay(input,out);
++});
++test('lookahead explores and compares several triples but publishes only the independently replayable first trio',()=>{
++ const input=state(Array.from({length:12},(_,i)=>card('c'+i,'abcd'[Math.floor(i/3)]))),out=finish(input);
++ assert.equal(out.status,'move');assert.equal(out.stats.goal,'multi_trio');assert.ok(out.stats.lookaheadTriples>=3);
++ assert.ok(out.stats.lookaheadDepth>=6);assert.ok(out.stats.lookaheadDepth<=18);assert.ok(out.stats.lookaheadNodes<=12000);
++ assert.equal(out.stats.completeSearch,false);assert.equal(out.stats.completeSolution,false);replay(input,out);
++});
++test('mission-first baseline is never downgraded by lookahead',()=>{
++ const input=state(['a','a','a','m','m','m','b','b','b'].map((t,i)=>card('c'+i,t)),[],{mission:{type:'m',current:0,total:3}}),out=finish(input);
++ assert.equal(out.matchedType,'m');assert.equal(out.stats.missionStatus,'priority');replay(input,out);
++});
++test('search cache invalidates on observed board, mission and state generation changes',()=>{
++ const plan=create(),a=state(['a','a','a','b','b','b'].map((t,i)=>card('c'+i,t)),[],{stateKey:'one'});
++ assert.equal(finish(a,plan).status,'move');const b=state([card('locked','a',[],{locked:true})],[],{stateKey:'two'});
++ assert.notEqual(finish(b,plan).status,'move');assert.equal(finish(a,plan).status,'move');
++});
++test('malformed cyclic dependency and unsupported rules are still rejected by the original validator',()=>{
++ for(const input of [state([card('a','a',['b']),card('b','a',['a'])]),state([card('a','a')],[],{capacity:99})])
++  assert.equal(finish(input).status,'invalid_state');
++});
++test('512-card bounded lookahead yields across slices and eventually returns a safe fallback',()=>{
++ const input=state(Array.from({length:512},(_,i)=>card('c'+i,'t'+Math.floor(i/3)))),plan=create();let result,calls=0;
++ do{result=plan(input);calls++;}while(result.status==='searching'&&calls<100);
++ assert.equal(result.status,'move');assert.ok(calls<=26);assert.ok(result.stats.lookaheadNodes<=12000);replay(input,JSON.parse(JSON.stringify(result)));
++});
++test('time budget cannot authorize an unproved card',()=>{
++ let t=0;const plan=create(()=>t++),input=state(Array.from({length:15},(_,i)=>card('c'+i,'t'+Math.floor(i/3))));
++ for(let i=0;i<10;i++){const out=plan(input);if(out.status==='move')replay(input,JSON.parse(JSON.stringify(out)));else assert.equal(out.status,'searching');}
++});
++test('deterministic generated DAGs never publish a covered, locked or tray-overflow first route',()=>{
++ let seed=20261017;const random=n=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed%n;};let proved=0;
++ for(let k=0;k<80;k++){
++  const cards=[];for(let i=0;i<15;i++){const blockers=i&&random(4)===0?['c'+random(i)]:[];cards.push(card('c'+i,'t'+random(4),blockers,{locked:random(15)===0}));}
++  const input=state(cards),out=finish(input);if(out.status==='move'){replay(input,out);proved++;}
++ }
++ assert.ok(proved>40);
++});
++test('resources add no timers, transport, remote code execution or captured-module execution',()=>{
++ for(const name of ['autoplay_extended','autoplay_powers']){const source=read(name);assert.ok(Buffer.byteLength(source)<65536);
++  assert.doesNotMatch(source,/\b(?:fetch|XMLHttpRequest|WebSocket|eval|setInterval|setTimeout)\s*\(/);assert.doesNotMatch(source,/new\s+Function\b/);}
++});
+--- a/Tests/autoplay_tool.test.cjs
++++ b/Tests/autoplay_tool.test.cjs
+@@ -6,6 +6,9 @@
+ const source=fs.readFileSync(path.join(__dirname,'../Resources/autoplay_tool.js'),'utf8');
+ const plannerSource=fs.readFileSync(path.join(__dirname,'../Resources/autoplay_planner.js'),'utf8');
+ const xraySource=fs.readFileSync(path.join(__dirname,'../Resources/xray_overlay.js'),'utf8');
++const extendedSource=fs.readFileSync(path.join(__dirname,'../Resources/autoplay_extended.js'),'utf8');
++const powersSource=fs.readFileSync(path.join(__dirname,'../Resources/autoplay_powers.js'),'utf8');
++const returnSource=fs.readFileSync(path.join(__dirname,'../Resources/return_tool.js'),'utf8');
+ // Explicit synthetic preimages of layout tags. They are not recovered game names.
+ const names={bg:'\u0000\u0082\u00e3\u002e\u0048',diamond:'\u0000\u00e8\u00fb\u0069\u0078',mask:'\u0000\u00c6\u00e8\u0030\u00aa',tray:'\u0002\u00f8\u009a\u0044\u00db',warehouse:'\u442d\u2c08'};
+ function makeFixture(records=[{zone:'board',type:'a',x:-80,y:0},{zone:'board',type:'a',x:0,y:0},{zone:'board',type:'a',x:80,y:0}]){
+@@ -40,7 +43,7 @@
+ // The adapter uses performance.now; its embedded planner uses Date.now. Both
+ // must share controlled time so scheduler delays cannot consume the 8ms budget.
+ function setup(f,{planner,clockStep=0,xrayFactory}={}){let now=0;const win={cc:f.cc,...(f.loader?{__require:f.loader}:{})};win.top=win;const context=vm.createContext({window:win,document:{visibilityState:'visible',readyState:'complete'},performance:{now:()=>{now+=clockStep;return now;}},Date:{now:()=>now},input:null,planner:planner||null,xrayFactory:xrayFactory||null});
+- vm.runInContext('var runtime=('+source+')(planner||('+plannerSource+'),xrayFactory||('+xraySource+'));',context,{timeout:500});
++ vm.runInContext('var runtime=('+source+')(planner||('+extendedSource+')(('+plannerSource+')),xrayFactory||('+xraySource+'),('+powersSource+'),('+returnSource+'));',context,{timeout:500});
+  return{context,advance:n=>{now+=n;},tick(options={}){context.input={command:'tick',allowAction:true,resumeGeneration:1,...options};return JSON.parse(JSON.stringify(vm.runInContext('runtime(input)',context,{timeout:1000})));}};
+ }
+ function reachDispatch(f,rt=setup(f)){assert.equal(rt.tick().status,'waiting_stability');rt.advance(250);assert.equal(rt.tick().reason,'plan_ready');rt.advance(250);const result=rt.tick();assert.equal(result.status,'original_event_dispatched',JSON.stringify(result));return rt;}
+@@ -605,3 +608,161 @@
+  const f=missionFixture();attachMission(f,2);const alert=f.node();alert.comps.push({className:'TaskFinishAlert',enabled:true,enabledInHierarchy:true});f.root.children.push(alert);alert.parent=f.root;
+  const rt=setup(f);assert.equal(rt.tick().reason,'modal_visible');rt.advance(10000);assert.equal(rt.tick().reason,'modal_visible');assert.equal(f.calls.length,0);
+ });
++
++
++// V3.20 opt-in cadence and staged power integration. This uses the actual
++// original-event adapter, actual originalPower wrapper and simulated game UI.
++test('Turbo requires fresh plan and two stable observations, but accepts 40ms instead of 80ms',()=>{
++ for(const turboEnabled of [false,true]){
++  const f=makeFixture(),rt=setup(f),opts={turboEnabled};rt.tick(opts);rt.advance(40);
++  assert.equal(rt.tick(opts).reason,turboEnabled?'plan_ready':'observing_board');
++  assert.equal(f.calls.length,0);rt.advance(40);rt.tick(opts);
++  assert.equal(f.calls.length,turboEnabled?1:0);
++ }
++});
++test('preference changes never erase a dispatched uncertain card latch',()=>{
++ const f=makeFixture(),rt=reachDispatch(f);
++ for(const o of [{turboEnabled:true},{extendedPlanning:true},{powersEnabled:true},{turboEnabled:true,extendedPlanning:true,powersEnabled:true}]){
++  rt.advance(10000);assert.equal(rt.tick(o).awaitingBoardChange,true);assert.equal(f.calls.length,1);
++ }
++});
++test('actual extended planner supplies multi-trio telemetry and still dispatches only one original card per evaluation',()=>{
++ const f=makeFixture(Array.from({length:9},(_,i)=>({zone:'board',type:'abc'[Math.floor(i/3)],x:-240+80*(i%7),y:100*Math.floor(i/7)}))),rt=setup(f);
++ let r;for(let i=0;i<50;i++){rt.advance(100);r=rt.tick({extendedPlanning:true});if(f.calls.length)break;}
++ assert.equal(f.calls.length,1);assert.equal(r.planning.goal,'multi_trio');assert.ok(r.planning.lookaheadTriples>=2);
++ assert.equal(r.awaitingBoardChange,true);
++});
++function powerFixture({counts=[1,1,1],fail=false,effect=true,boardTypes=['x','x','x'],handTypes=['a','b','c','d','e','f']}={}){
++ const f=makeFixture([...boardTypes.map((type,i)=>({zone:'board',type,x:-240+160*i})),...handTypes.map((type,i)=>({zone:'tray',type,x:-240+80*i}))]);
++ const m=attachMission(f,999);Object.assign(m.store,{state:2,start_time:100,rid:5,uid:7,gamers:[{uid:7,state:1}],
++  isHotTiming:false,isAddingCommonBlock:false,isUsingPenetrateProp:false,isCanTouchBlock:true,last_block:{id:f.cards.at(-1).receiver.blockInfo.id,state:0}});
++ const icons=['\u0000w\u00cc\u0081r','\u0000w\u00cc\u0081s','\u0000w\u00cc\u0081p'];
++ const infos=counts.map((count,type)=>({id:'power'+type,type,count})),props=[],row=f.node(292,90);
++ for(let i=0;i<3;i++){
++  const icon=f.node(80,90);f.sprite(icon,icons[i]);const n=f.node(80,90,[icon],{x:[-106,0,106][i]});row.children.push(n);n.parent=row;
++  const prop={className:'Prop',kind:f.cc.Component,node:n,isValid:true,id:infos[i].id,type:i,num:counts[i],propInfo:infos[i],onUseProp(){throw Error('direct forbidden');}};
++  props.push(prop);n.comps.push(prop);const event=new f.EventHandler();Object.assign(event,{target:n,component:'Prop',handler:'onUseProp',customEventData:''});
++  icon.comps.push({kind:f.cc.Button,node:icon,isValid:true,enabled:true,enabledInHierarchy:true,interactable:true,clickEvents:[event]});
++ }
++ const areaNode=f.node(20,20,[row]);f.game.children.push(areaNode);areaNode.parent=f.game;
++ m.layer.PropArea={className:'PropArea',isValid:true,node:areaNode,AreaNode:row};m.store.props_blocks=infos;
++ const socket={socket:{readyState:1},rid:50};f.loader=name=>({default:name==='GameStore'?m.store:name==='Socket'?socket:null});
++ let popup=null;
++ function addPopup(info){
++  const buttonNode=f.node(240,102),target=f.node(600,500,[buttonNode]),event=new f.EventHandler();
++  Object.assign(event,{target,component:'UsePropAlert',handler:'onBtnUseClick',customEventData:''});
++  const button={kind:f.cc.Button,node:buttonNode,isValid:true,enabled:true,enabledInHierarchy:true,interactable:true,clickEvents:[event]};
++  const receiver={className:'UsePropAlert',isValid:true,node:target,propInfo:{...info},useButton:button,onBtnUseClick(){throw Error('direct forbidden');}};
++  buttonNode.comps.push(button);target.comps.push(receiver);f.root.children.push(target);target.parent=f.root;
++  popup={target,receiver,button};return popup;
++ }
++ function close(){if(popup){f.root.children.splice(f.root.children.indexOf(popup.target),1);popup.target.parent=null;popup=null;}}
++ f.EventHandler.prototype.emit=function(args){
++  f.calls.push({event:this,args});
++  if(this.handler==='onUseProp'){const prop=props.find(p=>p.node===this.target);addPopup(prop.propInfo);return;}
++  if(this.handler==='onBtnUseClick'){
++   const type=popup.receiver.propInfo.type;close();if(fail)throw Error('after submission');if(!effect)return;
++   infos[type].count--;props[type].num--;
++   if(type===0){for(const c of f.cards.filter(c=>c.node.parent===f.tray).slice(0,3))move(f,c,f.reserve);}
++   if(type===1){const c=f.cards.find(c=>c.receiver.blockInfo.id===m.store.last_block.id);move(f,c,f.board);
++    c.node.x=(c.receiver.blockInfo.row*5)-240;c.node.y=315-(c.receiver.blockInfo.col*4.5);}
++   if(type===2){const c=f.cards[0];c.receiver.blockInfo.type=999;}
++   f.tray.children.forEach((n,i)=>{n.x=-240+80*i;});
++  }
++ };
++ return {f,m,props,infos,row,socket,get popup(){return popup;},close};
++}
++const powerOptions={powersEnabled:true};
++function startPower(p,opts=powerOptions){const rt=setup(p.f);rt.tick(opts);rt.advance(100);const r=rt.tick(opts);return {rt,r};}
++test('owned emergency Storage uses separate original open/confirm events then exact stable effect; not counted as a card move',()=>{
++ const p=powerFixture(),{rt,r}=startPower(p);assert.equal(r.reason,'power_popup_opened',JSON.stringify(r));assert.equal(p.f.calls.length,1);
++ rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_requested');assert.equal(p.f.calls.length,2);
++ rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_stability');rt.advance(100);
++ const done=rt.tick(powerOptions);assert.equal(done.reason,'power_effect_confirmed');assert.equal(done.powers.confirmed,1);assert.equal(done.confirmedMoves,0);
++ assert.equal(done.awaitingBoardChange,false);assert.equal(p.infos[0].count,0);
++ for(let i=0;i<6;i++){rt.advance(100);rt.tick(powerOptions);}
++ assert.equal(p.f.calls.filter(c=>c.event.handler!=='touchBlock').length,2,'no repeated spending before a confirmed normal move');
++ assert.equal(p.f.calls.filter(c=>c.event.handler==='touchBlock').length,1,'recovery resumes a normal proved card, not a second power');
++});
++test('disabled powers and read-only Xray never open or consume inventory',()=>{
++ for(const opts of [{},{powersEnabled:false},{powersEnabled:true,allowAction:false,xrayEnabled:true}]){
++  const p=powerFixture(),{rt}=startPower(p,opts);rt.advance(100);rt.tick(opts);assert.equal(p.f.calls.length,0);assert.equal(p.infos[0].count,1);
++ }
++});
++test('zero inventory cannot purchase or open empty power; Withdraw selected when Storage unavailable',()=>{
++ const none=powerFixture({counts:[0,0,0]});startPower(none);assert.equal(none.f.calls.length,0);
++ const p=powerFixture({counts:[0,1,1],boardTypes:['a','a']}),{rt,r}=startPower(p);assert.equal(r.reason,'power_popup_opened');assert.equal(r.powers.type,1);
++ rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_requested');rt.advance(100);rt.tick(powerOptions);rt.advance(100);
++ assert.equal(rt.tick(powerOptions).reason,'power_effect_confirmed');assert.equal(p.infos[1].count,0);
++});
++test('Refresh is fallback and needs both consumption and changed non-hand types',()=>{
++ const p=powerFixture({counts:[0,0,1]}),{rt,r}=startPower(p);assert.equal(r.powers.type,2);rt.advance(100);rt.tick(powerOptions);
++ rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_stability');rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_confirmed');
++});
++test('disabled or paused after popup open never confirms; changing preference does not replay opening',()=>{
++ for(const option of [{powersEnabled:false},{allowAction:false,powersEnabled:true}]){
++  const p=powerFixture(),{rt}=startPower(p);rt.advance(100);const r=rt.tick(option);assert.equal(r.reason,'power_paused');assert.equal(r.awaitingBoardChange,true);
++  assert.equal(p.f.calls.length,1);assert.equal(p.infos[0].count,1);
++ }
++});
++test('uncertain power timeout and exception never resend after pause/resume/options changes',()=>{
++ for(const fail of [false,true]){
++  const p=powerFixture({fail,effect:false}),{rt}=startPower(p);rt.advance(100);const sent=rt.tick(powerOptions);
++  assert.equal(sent.status,fail?'dispatch_uncertain':'original_event_dispatched');
++  rt.tick({command:'pause'});for(let i=0;i<5;i++){rt.advance(10000);const r=rt.tick({...powerOptions,resumeGeneration:3,turboEnabled:true});assert.equal(r.awaitingBoardChange,true);}
++  assert.equal(p.f.calls.length,2);assert.equal(p.infos[0].count,1);
++ }
++});
++test('round/room/store changes cannot confirm a different context popup or consume another power',()=>{
++ for(const change of [p=>p.m.store.start_time++,p=>p.m.store.rid++,p=>p.m.store.uid++,p=>p.m.store.isWatcher=true,p=>p.popup.receiver.propInfo.type=2,
++  p=>p.socket.socket={readyState:1},p=>p.socket.rid++]){
++  const p=powerFixture(),{rt}=startPower(p);change(p);rt.advance(100);rt.tick(powerOptions);assert.equal(p.f.calls.length,1);assert.equal(p.infos[0].count,1);
++ }
++});
++test('unrelated board movement or stock decrement alone is not a confirmed power effect',()=>{
++ for(const change of [p=>{p.infos[0].count--;p.props[0].num--;},p=>move(p.f,p.f.cards[1],p.f.reserve)]){
++  const p=powerFixture({effect:false}),{rt}=startPower(p);rt.advance(100);rt.tick(powerOptions);change(p);rt.advance(100);rt.tick(powerOptions);rt.advance(10000);
++  const r=rt.tick(powerOptions);assert.equal(r.powers.confirmed,0);assert.equal(r.awaitingBoardChange,true);assert.equal(p.f.calls.length,2);
++ }
++});
++test('manual stock/component divergence and wrong game state prevent opening a power',()=>{
++ for(const change of [p=>p.props[0].num++,p=>p.m.store.state=4,p=>p.m.store.isWatcher=true,p=>p.m.store.isHotTiming=true]){
++  const p=powerFixture();change(p);startPower(p);assert.equal(p.f.calls.length,0);
++ }
++});
++test('native bridge template constructs the exact new runtime with all three options enabled',()=>{
++ const bridge=fs.readFileSync(path.join(__dirname,'../Sources/SDKtools/STAutoplayBridge.inc'),'utf8');
++ const template=bridge.match(/NSString \*wrapped[\s\S]*?@"([^"\n]+)"/)[1];
++ const f=makeFixture(),window={cc:f.cc};window.top=window;
++ const context=vm.createContext({window,document:{visibilityState:'visible',readyState:'complete'},performance:{now:()=>0},Date:{now:()=>0}});
++ const replacements=['__SDK_test','document',source,extendedSource,plannerSource,xraySource,powersSource,returnSource,'true','true','true','true','false','1','1'];
++ let i=0;const script=template.replace(/%@|%ld|%lu/g,()=>replacements[i++]);assert.equal(i,replacements.length);
++ const r=vm.runInContext(script,context,{timeout:500});assert.equal(r.runtimeDocumentID,'document');assert.equal(r.status,'waiting_stability');
++});
++test('intelligent rescue never spends Storage or Withdraw when no possible trio would be enabled',()=>{
++ const p=powerFixture({counts:[1,1,0],boardTypes:['z']}),{rt}=startPower(p);
++ for(let i=0;i<5;i++){rt.advance(100);rt.tick(powerOptions);}assert.equal(p.f.calls.length,0);assert.equal(p.infos[0].count,1);
++});
++test('original power opener throwing after popup creation cannot be followed by automatic confirmation',()=>{
++ const p=powerFixture(),emit=p.f.EventHandler.prototype.emit;p.f.EventHandler.prototype.emit=function(args){emit.call(this,args);if(this.handler==='onUseProp')throw Error('uncertain open');};
++ const {rt}=startPower(p);assert.equal(p.f.calls.length,1);for(let i=0;i<5;i++){rt.advance(1000);const r=rt.tick(powerOptions);assert.equal(r.awaitingBoardChange,true);}
++ assert.equal(p.f.calls.length,1);assert.equal(p.infos[0].count,1);
++});
++test('ready normal trio always takes precedence over spending an emergency power',()=>{
++ const p=powerFixture({boardTypes:['a','a','a'],handTypes:['a','a','b','c','d','e']}),{rt,r}=startPower(p);
++ assert.equal(r.reason,'plan_ready');rt.advance(100);assert.equal(rt.tick(powerOptions).status,'original_event_dispatched');
++ assert.equal(p.f.calls.length,1);assert.equal(p.f.calls[0].event.handler,'touchBlock');assert.equal(p.infos[0].count,1);
++});
++test('Turbo, extended search and owned powers operate together and preserve exactly-once dispatch',()=>{
++ const p=powerFixture(),opts={turboEnabled:true,extendedPlanning:true,powersEnabled:true}, {rt,r}=startPower(p,opts);
++ assert.equal(r.reason,'power_popup_opened');rt.advance(40);assert.equal(rt.tick(opts).reason,'power_requested');
++ rt.advance(40);assert.equal(rt.tick(opts).reason,'power_effect_stability');rt.advance(80);assert.equal(rt.tick(opts).reason,'power_effect_confirmed');
++ let out;for(let i=0;i<35;i++){const old=p.f.calls.length;rt.advance(40);out=rt.tick(opts);assert.ok(p.f.calls.length-old<=1);if(p.f.calls.length>2)break;}
++ assert.equal(p.f.calls.length,3);assert.equal(p.f.calls.at(-1).event.handler,'touchBlock');assert.equal(out.awaitingBoardChange,true);
++ assert.equal(p.infos[0].count,0);assert.equal(p.infos[1].count,1);assert.equal(p.infos[2].count,1);
++});
++test('incomplete snapshot breaks consecutive power-effect stability instead of reporting early success',()=>{
++ const p=powerFixture(),{rt}=startPower(p);rt.advance(100);rt.tick(powerOptions);rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_stability');
++ p.f.tray.children[0].y=1;rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'animation_active');p.f.tray.children[0].y=0;
++ rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_stability');rt.advance(100);assert.equal(rt.tick(powerOptions).reason,'power_effect_confirmed');
++});
+--- a/Tests/billiards_resource_exporter_test.m
++++ b/Tests/billiards_resource_exporter_test.m
+@@ -61,7 +61,7 @@
+     NSURL *url=Run(documents,library,&diag,&error);NSDictionary *report=JSON(url);
+     Check(url&&error==nil&&report!=nil,@"empty cache still returns a diagnostic JSON");
+     Check([diag[@"status"] isEqual:@"resources_missing"]&&[diag[@"filesExported"] integerValue]==0,@"empty cache is not success reading balls");
+-    Check([report[@"format"] isEqual:@"SDKtools.BilliardsResources"]&&[report[@"toolVersion"] isEqual:@"3.19.9"],@"new export format identified");
++    Check([report[@"format"] isEqual:@"SDKtools.BilliardsResources"]&&[report[@"toolVersion"] isEqual:@"3.20.0"],@"new export format identified");
+     Check(![report[@"currentMatchIdentified"] boolValue]&&![report[@"billiardsPredictionAvailable"] boolValue],@"cached files never identify current match or prediction");
+ 
+     NSString *name=@"billiard_cres_0123456789abcdef0123456789abcdef";
+--- a/Tests/test_packaging.py
++++ b/Tests/test_packaging.py
+@@ -50,10 +50,10 @@
+     config=root/'identity.json';config.write_text(json.dumps(identity))
+     framework=root/'SDKtools.framework';framework.mkdir()
+     (framework/'SDKtools').write_bytes(binary(6))
+-    for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'card_sampler.js'):
++    for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'autoplay_extended.js', 'autoplay_powers.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'card_sampler.js'):
+         (framework/resource).write_text('(function(){return function(){return {};};}())')
+     (framework/'billiards_probe.lua').write_text('return "{}"')
+-    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'45','CFBundleShortVersionString':'3.19.9','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
++    (framework/'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'SDKtools','CFBundlePackageType':'FMWK','CFBundleSupportedPlatforms':['iPhoneOS'],'MinimumOSVersion':'15.0','CFBundleVersion':'46','CFBundleShortVersionString':'3.20.0','SDKToolsTargetBundleIdentifier':identity['bundle_id'],'SDKToolsTargetVersion':identity['version'],'SDKToolsTargetBuild':identity['build'],'SDKToolsTargetExecutable':identity['executable']}))
+     return ipa,framework,config
+ 
+ 
+@@ -163,7 +163,7 @@
+     def test_current_production_resources_roundtrip_unchanged(self):
+         resources=Path(__file__).resolve().parents[1]/'Resources'
+         production={p.name:p.read_bytes() for p in resources.iterdir() if p.suffix in ('.js','.lua')}
+-        self.assertEqual(len(production),14)
++        self.assertEqual(len(production),16)
+         self.assertGreater(len(production['billiards_probe.lua']),65536)
+         for nested in (False,True):
+             with self.subTest(nested=nested), tempfile.TemporaryDirectory() as t:
+@@ -253,11 +253,11 @@
+             plist=framework/'Info.plist';info=plistlib.loads(plist.read_bytes())
+             info['CFBundleShortVersionString']='3.19.4';info['CFBundleVersion']='40'
+             plist.write_bytes(plistlib.dumps(info))
+-            with self.assertRaisesRegex(IntegrationError,r'3\.19\.9'): integrate(ipa,framework,identity,root/'new.ipa')
++            with self.assertRaisesRegex(IntegrationError,r'3\.20\.0'): integrate(ipa,framework,identity,root/'new.ipa')
+             self.assertFalse((root/'new.ipa').exists())
+ 
+     def test_required_tool_resource_missing_rejected_without_output(self):
+-        for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua'):
++        for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'autoplay_extended.js', 'autoplay_powers.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua'):
+             with self.subTest(resource=resource), tempfile.TemporaryDirectory() as t:
+                 root=Path(t);ipa,framework,identity=make_fixture(root)
+                 (framework/resource).unlink()
+--- a/Validation/V3_20_0-validation.json
++++ b/Validation/V3_20_0-validation.json
+@@ -0,0 +1,415 @@
++{
++  "schema": "SDKtools.Validation.v3.20.0",
++  "toolVersion": "3.20.0",
++  "captureToolVersion": "3.20.0",
++  "frameworkBuild": "46",
++  "date": "2026-10-17",
++  "baseline": {
++    "toolVersion": "3.19.9",
++    "commit": "14355f69ec86779d3db76cf08a1aa0397df153c7",
++    "sourceZipSHA256": "4ff71a9d84bd82dac704ae3025a72d425a6cf6fdf34db7ef3705ebe63e928638"
++  },
++  "scope": "Three independent session opt-ins: Turbo cadence/stability, bounded multi-trio beam planning, owned emergency Storage/Withdraw/Refresh through original popup events. Existing mission-first planner and manual power wrapper preserved; no purchase, transport forgery or warehouse unlock. Experiment hidden.",
++  "localValidation": {
++    "javascriptPassed": 688,
++    "pythonRun": 94,
++    "pythonPassed": 90,
++    "pythonSkipped": 4,
++    "failures": 0
++  },
++  "limits": {
++    "targetTurboIntervalMs": 40,
++    "normalIntervalMs": 100,
++    "minimumTurboStabilityMs": 40,
++    "normalStabilityMs": 80,
++    "powerEffectStabilityMs": 80,
++    "lookaheadSelections": 18,
++    "beamWidth": 24,
++    "maximumLookaheadNodes": 12000,
++    "maximumLookaheadSlices": 24,
++    "lookaheadSliceMs": 6,
++    "maximumOriginalEventsPerEvaluation": 1,
++    "automaticPurchases": false,
++    "uncertainActionsAutomaticallyRetried": false,
++    "liveServerAttemptsFromThisHost": 0,
++    "deviceTested": false,
++    "signingPerformed": false
++  },
++  "sourceSHA256": {
++    "Analysis/Captura-US-V2-20261014.json": "c447e481c2f95699d5ff370507dc8a74b6d334b0802dd1b60e042cfd986eb494",
++    "Analysis/Captura-US-V2_1-20261014.json": "6e0e5efae471d1957f98a93f175d069de517f5e80d7c6ded7907aa00b227fcd7",
++    "Analysis/Historico-Asia/Unity-Sheep-evidence.json": "a3a04b8c791a9f25022d8cd45970a969aa7c4018783f9fede4c7b9c348bc261d",
++    "Analysis/Historico-Asia/Unity-Sheep.md": "3b8a1fde925172758e9afbad7e2520b04a560f51ddf813ce077ba9e924a0e67f",
++    "Analysis/Historico-Asia/WePlay-CrazyAlpaca.json": "367c62d03549c67978675ebef722873571da1461c2d0df30efa83490c7352518",
++    "Analysis/Historico-Asia/WePlay-CrazyAlpaca.md": "d751f99c09550a2b67919609413089de57660dd571144c4b1eefbe4a284b8b07",
++    "Analysis/Pesquisa-UseProp-Armazem-V2_8.md": "5bb785f77a401716435ff261abad00432263c83b9e88966e58e57ec09a2fa4e2",
++    "Analysis/Retornar-evidence-v22.json": "ceb3649216e10e6f9be4999e11e4532f0295dd4f669e6d5a961a3cc9ee497d65",
++    "Analysis/Retornar-evidence-v23.json": "5f8801ae57489c74a87418a44e9ca5aa278b07c160baf58713c5c7deb8018cdf",
++    "Analysis/Return-limit-investigation.json": "2ffcc83a861d1e825fac0cff5f1f8a650c5636488097832ea3be9b943942f080",
++    "Analysis/V2_6-autoplay-evidence.json": "0765af10e71fad99e709a42022ea9aebae28b6fe16d1cfb72ae8620f7fa75089",
++    "Analysis/V2_6-new-captures.json": "2c519d2f610857a3ecc0bcc278c7340c36443fa86f5b972c76f5f09a0d8029e8",
++    "Analysis/V2_7-autoplay-diagnosis.json": "a7a1fa04ac68a50267d2a41ddfc5928ab459943fa8d7779b47034a40135873e9",
++    "Analysis/V2_7-power-consumption.json": "48a7e22c13db3d1096e33f3b3c2a9a022beaf2d99b2f1ab4b2b277605a63b5a5",
++    "Analysis/V2_8-warehouse-evidence.json": "f90e08fc71713e075c4d46892bee2546006a8e1196a5e57187f76eb9cb0fbbc6",
++    "Analysis/V2_8_1-build-fix.md": "b6e9d2ca33a44477887c9269f26f187a38744d56b483439250fb2c0a40f593af",
++    "Analysis/V2_9-autoplay.json": "2736f6073b3f5a4b4c94a88aaf2bd5ee6594b59d4dfa969ea1142019e0e4532c",
++    "Analysis/V2_9-export.json": "9ccd420d73c7b4d42c347e6cb5ddce6ad464d037659a81e1945d425aa4fb8d3f",
++    "Analysis/V2_9-warehouse-powers.json": "0cee520dccf5612dde76caffc779900b730952b0907b6f471b33eec6b80de913",
++    "Analysis/V2_9-warehouse-powers.md": "4ab0b0b2395e45fc045c359dc676fa26e73d6508370f8c0d0ecec91eb748d7af",
++    "Analysis/V3_0-autoplay.json": "6c11f90fe22992fb7dd5a9635f0c4eb282a4016671bfe619afd4bc991aab838c",
++    "Analysis/V3_0-export.json": "031006ab47a1a6702b74dfcf78dcf277f15de58317486245656475ec9ddb37c9",
++    "Analysis/V3_0-planner.json": "a0412c89bcef431253533cb3d1936b9b82a640d33a4bf3339a4233379f971644",
++    "Analysis/V3_0-warehouse.json": "111ee4ff32b0cd80cf6ae50a54325bc6cbce9d60cbcc0495cf46195333bf2585",
++    "Analysis/V3_1-autoplay.json": "fe96daf4bd9d95657b6e9e8a592f989662bdea9c5cbc1baf153bc365b3d8ca93",
++    "Analysis/V3_1-original-rules.json": "85741555341b1fcfee95613e932a73aa06d20663d940f42d7ad150970ab3d43f",
++    "Analysis/V3_1-original-rules.md": "a0ebaae57aa9c7f38d6f50a8d5c3da9a0acfc9c7250726aacf0d9ffc04550a23",
++    "Analysis/V3_1-planner.json": "a6f88a27e8f39f934dcbcce7fd3feaa43aa3ef6d509da46ccff41b091c35d31a",
++    "Analysis/V3_1-xray.json": "b6d1eee82ec810039818e95398f19c0a5083192af2fbb26a636ee692fa81e0c8",
++    "Analysis/V3_10-card-flow.json": "2d6e8f76d5e16ff167bc5d8e27f9a96104493b573ce9666ba459a29a65f429bc",
++    "Analysis/V3_11-card-flow.json": "37ebfb5c2403cba74ed7ef69e07ff73990583c2f038235ff90c77bbf27053ee1",
++    "Analysis/V3_12-input-capture.json": "4c6b7578b95d5e919e0128218e1d764c8df0a16fecbd5e90358f42b01a83ea70",
++    "Analysis/V3_12-input-capture.md": "5ee79630c5f0f3d4716d9ac0f130c0009ac76d781f40a87912e72f934205b85c",
++    "Analysis/V3_13-billiards-discovery.json": "aec3e68a218620c53b140b727ae0579ba0c3a5a040a3048439f088562fa0d15f",
++    "Analysis/V3_13-billiards-discovery.md": "796819c4524fe0c851e97569be70cfdc8a71bb7f945d0393efde3261e0744c11",
++    "Analysis/V3_14-billiards-unity.md": "8029fb8df521fb97c027342e80060f7e6f20711e21daaa0eaee48c3dace81ea2",
++    "Analysis/V3_14-evidence/INDEX.json": "db3dff242dfdceb09bec25411a85868772ca58628c5c16537e9104f560c4af81",
++    "Analysis/V3_14-evidence/extracted-identity.json": "473afa18b46c3230180c9ca282fea85bdeba14d5d0b303fb51022407bce6c320",
++    "Analysis/V3_14-evidence/input-identity.json": "775e4ab3887326e56e786212a2c37b41b5c7b7b42f58c1aadc22dcdd52c2a98d",
++    "Analysis/V3_14-evidence/ipa-inspection.json": "174455cc7b5cbe34be6bffe2ca69cc6b72d27119db1dc17dc2085612cd670f7e",
++    "Analysis/V3_14-evidence/metadata/billiard-manifest-schema.json": "f9cf1661604434ef9bdac3184993d15c54cad4e2dde85b9889aa504bda5f0c1e",
++    "Analysis/V3_14-evidence/metadata/loader-declarations-resolved.json": "cd89f03516c7d71820d2ac0808fdbc20a54f8f2a5602915d329c444b989fbf5b",
++    "Analysis/V3_14-evidence/metadata/loader-state-contracts-resolved.json": "e00638fc743c9028fa89113afae5304874252c35c714b68807100946f8b3b6c8",
++    "Analysis/V3_14-evidence/metadata/metadata-findings.json": "d16263339721e609fdccf523d2e4203046ff6cbf78f3d0e129a00a924388e570",
++    "Analysis/V3_14-evidence/metadata/parse_metadata.py": "141e500afaed21cb6e16ff7c363cdfdc0403d5a64ffa2c87e07ece63cee5d19f",
++    "Analysis/V3_14-evidence/metadata/resolve_native_types.py": "8949338aab8546e9b41dc37e28a8f2263c6b4e0d6daf9738edf8a48e7b7433da",
++    "Analysis/V3_14-evidence/metadata/unity-observation-api-contracts-resolved.json": "96289710ebfb72a7aff6dcb065b462de4fdef2bdf5ad049d5783212bfbdbfcf3",
++    "Analysis/V3_14-evidence/native/IL2CPP_ABI_Contracts.json": "8ceff64c75a5aa50e4076487239124a0c2231af94f57e58e19695fdfe0715378",
++    "Analysis/V3_14-evidence/native/Unity_Native_Findings.json": "08064f952808fc33276d76cc00e16f2bde84e115418d72ae1da5cb616dc219d5",
++    "Analysis/V3_14-evidence/native/analyze_macho.py": "c59ab6232eb14131aeac8f7cd18d8f5011bdcb23dc4fd52496f430f1bd887a39",
++    "Analysis/V3_14-evidence/native/dump_methods.py": "60b1f1e2b276b49c9db00085ffcacd884bcba248cc689090b4890daf54cf204f",
++    "Analysis/V3_14-evidence/native/main/identity.json": "de957f61310e16d1eb6362873787f4aaac96ac183569b30e67c07eae78863980",
++    "Analysis/V3_14-evidence/native/unity/LoadGame_MoveNext_arm64.json": "aad4f73f626a18ad46fc9b55410a13ba94d85f2fc279958c200a687b92b82605",
++    "Analysis/V3_14-evidence/native/unity/codegen_modules.json": "071e4ae86a7e5a0e5d5d91d83ef44951d7aeb0a1ffc1119140302aeeee8a28e9",
++    "Analysis/V3_14-evidence/native/unity/exports.json": "d1db09d0aafb146de8fb70bd9908fee92a3aa2e9071ec28dc43683b859039c7d",
++    "Analysis/V3_14-evidence/native/unity/hall_getters_arm64.json": "7ded4ce250bf03c78025c6251675b67a900a366ced88cdabc610a9452a7a9d1d",
++    "Analysis/V3_14-evidence/native/unity/identity.json": "bd1b9b9672aa715aa352a710aec84861e84c8a1ec896c8180a59c213be493fe3",
++    "Analysis/V3_14-evidence/native/unity/il2cpp_api_disassembly.json": "a7fb5d796342d70b94750e3fa83aa2bcd5d1c753839a38cbb7153f7fe37c003b",
++    "Analysis/V3_14-evidence/native/unity/manifest_local_paths_arm64.json": "050fdbc092f44e085d76f8f1676330fe6d343dc3f3eba571e4d171ce21403b2e",
++    "Analysis/V3_14-evidence/native/unity/persistent_path_icall_registration.json": "22b2d47dff519d85b8d80bd05e68fd078f8fb151084953dc20e6f0ca33cdd124",
++    "Analysis/V3_14-evidence/native/unity/persistent_path_native_arm64.json": "80703642869458785fb5fdc36ed5d32e82b1606b09a82f253872ee30b0ee9eb2",
++    "Analysis/V3_14-evidence/native/unity/recompression_arm64.json": "e4495b26fa34e11d74dddf8112608c9031e0bca02ae9381f7d5b8e9c121c3ca3",
++    "Analysis/V3_14-evidence/native/unity/registration.json": "97a8bc604a36b31f9a75d77fc6ff6277d61e7b87195efc233d6f0cf1cec3c771",
++    "Analysis/V3_14-evidence/native/unity/resource_paths_arm64.json": "8828af1fbaf3b5fbf76fe1eeb7c312e0f463b670c9e9b393e215ea6dc7ec52ba",
++    "Analysis/V3_14-evidence/native/unity/resource_roots_arm64.json": "16e4e58862a5a4606c70571aa1d33cd983336be0a9107a65778c081a124cea5e",
++    "Analysis/V3_14-evidence/resources/billiard-export-allowlist.json": "1c8649e5ab3e390de6fd2e40f116bf36e96057e26de2284501d9a1c370a26c62",
++    "Analysis/V3_14-evidence/resources/billiard-manifest-decoded.json": "c3b213abda64a1d5255076d1f9a3f7e1908056376f8a09f9a8114fce56f017c0",
++    "Analysis/V3_14-evidence/resources/billiard-manifest-wire.json": "e4598760f5487dcc35524b22f843ba8e3584e76aff85e03bb37c7e1f00a9f391",
++    "Analysis/V3_14-evidence/resources/decode_manifest_wire.py": "4e7aab2c1e41556801c2b86b41af2bf40f8c67e683d90f95ac9a5b68ddac8d24",
++    "Analysis/V3_14-evidence/resources/inspect_resources.py": "0692ca617a54f61f903a45b8685242bfa6caf84428cb419eea963f3faabe8aa6",
++    "Analysis/V3_14-evidence/resources/resources-report.json": "100a90ec1cb7236b099afade5d989ac3413cd52c8486f0a0d84a5ec5450544dc",
++    "Analysis/V3_15-billiards-live.md": "f2539ccb410630c13de90c604b44448143034a0759c8ced6f365066f40667db5",
++    "Analysis/V3_15-evidence/INDEX.json": "46340b66cd52020144ba7b7dcf0a36749db1e33ea714274b8433f91e89b073fa",
++    "Analysis/V3_15-evidence/capture_findings.md": "c0269bbdd740caacb2662b2ef8c63351285a2d65ca634602323cd69d2240ee0f",
++    "Analysis/V3_15-evidence/lua-index.json": "6b88196e0c313fb3f93097819f712abb44fa0f1ae9c40318734082b3ce81011b",
++    "Analysis/V3_15-evidence/lua_bridge_evidence.json": "628db5ba8f05467341e76a04a19c498b3718eb1600a2fb67b96549081a467f41",
++    "Analysis/V3_15-evidence/lua_c_api_arm64.json": "95fae77eea4f5d447f507532efd4e81245ac15cc962192e513cead5c1ff62491",
++    "Analysis/V3_15-evidence/lua_lifetime_arm64.json": "dce021b448e9528d1a17202bdc43a2c19e77dc0b42156c830a07b87675012b3f",
++    "Analysis/V3_15-evidence/lua_loader_environment_arm64.json": "b211a79b1a903d0e89e6e414cd4c86f044214ec356d435c45d655d1db6d298ab",
++    "Analysis/V3_15_1-build-fix.md": "2a506ac670c0f2451b1e5f815cec746cf20326e0bcd81474eb044e0582a6053a",
++    "Analysis/V3_16-environment-contract.md": "7a812d729b40a46a70269aa67eee06ed2e62fdefe3c395dfb53c3e6d097c7cf7",
++    "Analysis/V3_17-capture-audit.json": "089dce1cd96dd1c528ff30993b0a22eb68d19ce710bb9c76b078f3a2bef025a4",
++    "Analysis/V3_17-resolution-contract.md": "ed859c3b9fc32f42d5c09099facdcceb15f08afe6da5c731d5399e896eaaa04a",
++    "Analysis/V3_18-capture-audit.json": "8c3bd3e1e1ffc3af4ee246ec815711ea5cc3e3a891b2d4761bc13eecf600790b",
++    "Analysis/V3_18-capture-findings.md": "8d7968cc3d4eb382c8e3093d5dc4a6dab058f3e02bbf2c41cffcbf88efbf4c5d",
++    "Analysis/V3_18-chain-contract.md": "bcf99c9816086ed6019829bc7af32abeafe5a788dd998f6dbbf371f09531523b",
++    "Analysis/V3_18_1-build-fix.md": "977d1d86bc62bcca726c226fee24e477630c0771c52533cff97cc97e07d0c4d6",
++    "Analysis/V3_19-archive-inventory.json": "e57b79d46cb2c8b74d0365d6bb2cb45a975f5f0a7780b8fa80c15d19a59aaeb3",
++    "Analysis/V3_19-core-physics-review.md": "c470dead7c4d2a42c6668f8c819700a07c3be04ffaf10d697dfc1285291e3811",
++    "Analysis/V3_19-extracted-files.json": "83ebd02cd08ed719e6d42e6aa98f01fe3ea35fb56db1153dae9956861aeca8d8",
++    "Analysis/V3_19-motion-analysis.py": "361491fad9f7aeab27fcb9835607305d791ce096d3abecfabb85cb1354796469",
++    "Analysis/V3_19-motion-calibration.json": "bc623933668b52e9cb29cfa59067a0bd6ae1a83e8739a828b570cb51aec0e12c",
++    "Analysis/V3_19-motion-report.md": "550699794ae9c2e20a5e775dd413977992f7630b62189466050f46873ad4c9b7",
++    "Analysis/V3_19-native-contract-audit.md": "1ee6c312ff19e0cdd4a8925a57940056d74d5897b81bd3ee0d64d80b0a6376f2",
++    "Analysis/V3_19-sliding-transition-validation.json": "53aac6a441b4fd59a5c004615edb3100e32775d118488fe3e1c2aeb8983f9470",
++    "Analysis/V3_19-sliding-transition-validation.md": "4a06294a26e8135e4ec93658d5224c30fdc3880f8447106d091019a389be4702",
++    "Analysis/V3_19-source-physics.md": "ec955e584343c4dc3489e6a66f9fa2d798570f274abd831fef670a5c5f30b7c0",
++    "Analysis/V3_19-video-findings.md": "8d6d6b9af69d68e5694637de8eda2e75e8d93cd828d9757084496bbde3e7ca42",
++    "Analysis/V3_19_1-build-fix.md": "5237ff55640365db041ea5a6154ce1e624dfe45e6a3798e111f6aa9f16da41f1",
++    "Analysis/V3_19_1-finite-chain.json": "88d3e8a32a64182430db8f3d211a99a0e0f1f57448c1cb57e0dfe2582854c826",
++    "Analysis/V3_19_2-capture-findings.md": "6e8213533adcef69c2dc0d2666d941b5c058c22b927adc4faaca08d387420e8a",
++    "Analysis/V3_19_2-capture-summary.json": "65d4d99a5222804f43a2fb4491b68c0d00c36a5c34c8e42987e50bd508e87fb3",
++    "Analysis/V3_19_2-xlua-enum-profile-review.md": "a7a1905c48d8c42e7f09947fa9c2ac7b346a4abb3fd020e749ec0132caa186c4",
++    "Analysis/V3_19_2-xlua-tostring-arm64.json": "7ecbed84bf3a2283127dd56b26176cedec25c550127fabdfb89331f8ade89940",
++    "Analysis/V3_19_3-build-fix.md": "1acad698523651942d274c0f57ff5be90c4c23ea1d94c1aac0958dda10e23a7c",
++    "Analysis/V3_19_4-cards.md": "8e51c58499bdb715d0020578f66753efc3f96aaf68d023a99ad89f76c5134e57",
++    "Analysis/V3_19_5-select-give.md": "513434be8d235dc8537bdcaa8456f738ab7e131a82c8714c5bda2ae0c7df02e2",
++    "Analysis/V3_19_6-counts.md": "205d0bd73c20f725791084e0229ad88fc92afc13354596ee967b0d4468546693",
++    "Analysis/V3_19_7-injected-sampling.md": "cd2bc361782bdd6033f35515cb2d105223fe6c80f9d8eb3d7473eaf28aec1bb2",
++    "Analysis/V3_19_8-mission-priority.md": "34fc5309099d0a3c1aa945238cb9372ceb5cbaa8d0082cfb72ccde8274ba022d",
++    "Analysis/V3_19_9-warehouse-lock-test.md": "e66f1224fedd13b54ec1afd33dc7e32b4cae777e180e46a353b52afbebcc1767",
++    "Analysis/V3_2-autoplay.json": "17b89d0ce231e0cd71c7b3c9c8416207a4d2c20c5f6d5f5c1ed4935dc81ec800",
++    "Analysis/V3_2-original-rules.json": "6c199ca310e74fd1af1f5398cccabe357296c66c3801b16f377c0bccc178e8ff",
++    "Analysis/V3_2-original-rules.md": "064a3653845de4ce8c5b455eae367913e0333fafc827eb22a65ee6c4462a1d3c",
++    "Analysis/V3_20_0-alpaca-turbo.md": "4cbe077a87a369e539aa3a7016ef9a6e196cb39b82c11ade60776bf812cb1c05",
++    "Analysis/V3_3-autoplay.json": "bcd23e1fe8d4d41a35f5619d0b84204d0ad8c6d59412b31b033ad195ada23d02",
++    "Analysis/V3_3-capture.json": "16f0e09165351e100e56d215bb6a0a71d35bce1a0fd8d042a22e82bacb0b2b15",
++    "Analysis/V3_3-capture.md": "cdc21fd81d7d2ab9250a02821f4bc9c6299d8e861639573da4c375db5b91601d",
++    "Analysis/V3_3-new-game-capture.json": "423f25049c63a3bf83011754e951aefe8a72f5ad9964a1df157279ba8f5157d7",
++    "Analysis/V3_3-xray.json": "bc9e3c23caee703dc27cc663930ab18b8fd55f39bf7f29889494f34014aaf705",
++    "Analysis/V3_3_1-build-fix.json": "e7d670fdf56c0da41f0dca31024b4f474bfeed0542e1a7c02019fb6ed8185f54",
++    "Analysis/V3_4-card-hints-capture.json": "b54f1f7afc2b795702483ac3608260d5c0662dacf934fd85134dd2ab3ce5da53",
++    "Analysis/V3_4-card-hints-capture.md": "883ee3d17e37a2a6b9c8d60d7fc7e77af809deea84e696ac10fb2e45e72e4a7a",
++    "Analysis/V3_4-card-hints.json": "e9486d3cdc81fead9bd8ae8b110b69579b142be9b6544298b93184da8c56f828",
++    "Analysis/V3_5-card-investigation.json": "b707f0dd15b259bb7db8fc784d771926f6784a1605b9e5e7981fd239e936132d",
++    "Analysis/V3_5-card-probe-review.md": "68fb0985eaa60c2bf06cce69f385ed5cf6af74db7bdef24ede8072c36ba185a6",
++    "Analysis/V3_5-source-export-evidence.json": "0dddddba495275cce06ed285d4f6626c84c78061950ae1547ca350b111cf1ed1",
++    "Analysis/V3_5-source-export-review.md": "aa2e91d879a31077f5a03857807c0e987e5fe39ff9c857bef5418daeb0fc70a0",
++    "Analysis/V3_5_1-build-fix.json": "9c36233096ac8d8f41459e5987a3e8e636cb80eff913f0e67fb767089b122b5f",
++    "Analysis/V3_6-capture-failure.json": "7daa6565afdf273b910e815931fa7366cbca80ca52e7e6cf66bb208797b7dfb3",
++    "Analysis/V3_6-capture-failure.md": "0ef5195beb7b279df577672785f6d879a36bdaec61fd1d8f24fc0d2bf9f35b0d",
++    "Analysis/V3_6-capture-fix.json": "e137555835a2179e3b5c848f164a2e0dfd278c7064b96670794e74c61d186c7f",
++    "Analysis/V3_6-card-contract.json": "c5710ed45a9f153d44387786effd8a580afa3984ef378684cd5249e0afbe7ef3",
++    "Analysis/V3_6-card-hints.json": "66d55fdb5c6c6263887d82617d860042e3c08668c14d509fc07e3b76a451e3f9",
++    "Analysis/V3_6-menu.md": "f4169dde0e4d47403ae2bb7219955d1d9e3f2f988ad4d4896291dc1a9dba3172",
++    "Analysis/V3_7-capture-analysis.json": "87e000f67cf3c2f0ef65cae3527629edb2b2762928136137dd9410a55a570509",
++    "Analysis/V3_7-card-xray.json": "f63d2e4fb475fe23be4fa1fee73bc0d5fe8bbe8a4d67be95783db27db0a22e9c",
++    "Analysis/V3_8-card-flow.json": "9d41309ae0d1a6653f6499a847e84d6b693607c3415d0da4be9ad1526cb35d4f",
++    "Analysis/V3_9-card-flow.json": "1179213c76e85555e7db254f9da6e64dae055a8a06ff23760d618201903c4e44",
++    "Analysis/WePlay-US-CrazyAlpaca.json": "8a80d15372604ac94099ee1ada000f65414f991a4a870a1f5fa86b6761b69a27",
++    "Analysis/WePlay-US-CrazyAlpaca.md": "6bdbb9adc7418880627d409febf7d629a5fa092346cbe5b1a18bdb9714c63040",
++    "Analysis/replay_hand_counts.cjs": "610e6bb9bab482373168ac8f074120845458249aa35edda17ef309fe65b7017b",
++    "Analysis/replay_injected_sampler.cjs": "932a8303473206c813914aea29fb819710433edd06b8cbf5dc586fe5fcffa18e",
++    "README.md": "5d735c82a961addbfa18b5cc26d221b884689f0719967c9b4841930b26e18e22",
++    "Resources/Info.plist": "39093614c61365dd1a279237457f8f3b6f66647e10029d00e7c7411605e6faad",
++    "Resources/autoplay_extended.js": "946d7720a5e256c74b232b2a7f416b1b5ab9114476bb6ccd878f44151116201d",
++    "Resources/autoplay_planner.js": "77c88457ad9efe6373ce550482b95c1a896c61651291abba52d4325ecc1e8e51",
++    "Resources/autoplay_powers.js": "e16ef77e23e1f8f3298002a407c942797b7d23ef0ed626851f38732e4f5c180a",
++    "Resources/autoplay_tool.js": "84679619e46e074f1d18b8c1de946ab170d5cd3a4a6659c040d48f9c40591e18",
++    "Resources/billiards_probe.lua": "cf9c1d9cfe7fbd4e2368d7c621d3fc421db46641c4d6e1e0328c7ebc23e92619",
++    "Resources/card_early.js": "19efa975e9f0e3805bea877af51d1f20b39868c26c335d4a08faf7927e89b9ed",
++    "Resources/card_flow.js": "3f24a6994961bd75ef940b8e36ec64d41dcfff0a028c71e01b9c5b4fcd7aa973",
++    "Resources/card_hints.js": "67135aa910e40985bec86873864c135fc7c93149a4c42824bfac17d263dc40d7",
++    "Resources/card_probe.js": "457ae79cce58c6c98269555bf2945a3c4a418a2524d4e332165a15c46e35851b",
++    "Resources/card_root.js": "fea0356d94b032528291fa6fdccea184b0c732e650a59c6ed3ea524cd4cd8f68",
++    "Resources/card_sampler.js": "6e680277e8e560ef755eb5bf1109b0ae11e8f1ff45ef5eee605ae4af48c308bd",
++    "Resources/return_tool.js": "5bf6fa38183dd762bdbf73de17d314aa9c8ec8149a85c66d3e03e657e63b9259",
++    "Resources/scene_probe.js": "a275168ed6d19720ca7103878e05e5a9c4dc2131fdb935c9efe2a833cd500272",
++    "Resources/warehouse_test.js": "5b24c2c04246af17cbc1e4c25973995bde0a3cc068348e8571f2e7bb6d8da346",
++    "Resources/warehouse_tool.js": "2db3b1af7d712144243bc002168c0d6988579106f8de4825a19f07e94f048094",
++    "Resources/xray_overlay.js": "1268ed2f57e04ef6113cea5764a4cacb8afec5439c23d8990d4f528eeb4afe18",
++    "Sources/SDKtools/SDKtools.h": "a6af41ffeab4c0810678ed42d77ccca77516ae3d8170718ea43ed1fe4021a440",
++    "Sources/SDKtools/SDKtools.m": "1b14423369b089fc5ede0618e0617e8a1800ea55b90f77cbd8361f542fd85072",
++    "Sources/SDKtools/STAutoplayBridge.inc": "47b29b0b2fc7517a398ec8a561d144ad0ec0964eb7e9ef969b263e1743713528",
++    "Sources/SDKtools/STAutoplayRecorder.inc": "f72c698a14e7dffb3c602f85cbcd8069dddb3271213006dba07e37e094ebed3d",
++    "Sources/SDKtools/STAutoplaySanitizer.inc": "ffd1f48eab95eaa072dfcdd5746e0f44d1d1c6d18f8af02d4d12eeecfe8bdbf3",
++    "Sources/SDKtools/STBilliardsCaptureReport.h": "e36a3e7e40bf9410b4609356e500af18162b47897ed840266fbbdc2fa855fec3",
++    "Sources/SDKtools/STBilliardsCaptureReport.m": "c468c6ac87ad4f659694559bf46489ad2828211d1d47f5ae2e18a82e07106790",
++    "Sources/SDKtools/STBilliardsGuideDrawing.h": "a9edb8c4b46a61c4329681ae5ec5625101b2a74b2eac6bcb2be581dae9384da3",
++    "Sources/SDKtools/STBilliardsGuideDrawing.m": "d7436bd17926d759e3efae68fe2463629a64d88615fc9e823da1df6c7b025f9a",
++    "Sources/SDKtools/STBilliardsLivePolicy.h": "16fc9df1291f0a8eb8b59bba6bbe704b200a51753af109ae63e423714eedceae",
++    "Sources/SDKtools/STBilliardsLiveSnapshot.h": "a3da431e8b1272ec3902c7887acb75ba90737f64921a8bf1f319743a1a8bb0c4",
++    "Sources/SDKtools/STBilliardsLiveSnapshot.m": "c41cb6deac208672c20a56616a37d2c769db22dda5c35ca48ed26566d3c51311",
++    "Sources/SDKtools/STBilliardsLuaBridge.h": "2b8253ed1c6291440a5901f93175921fe9338f4313638401f9265cbc7d9b9831",
++    "Sources/SDKtools/STBilliardsLuaBridge.m": "1b328526e0acdfc86af569b4fd51c26140ffa75fa264751a21cf41955aae1e0e",
++    "Sources/SDKtools/STBilliardsNumericPolicy.h": "0d8aa504ecee5f3019d8e518375ef7117d9a72c9b1e2951ff34713ad41578420",
++    "Sources/SDKtools/STBilliardsResourceExporter.h": "407187bc91101ea607248262af0ac2b829dc59fc5762a851f816761aef937c0e",
++    "Sources/SDKtools/STBilliardsResourceExporter.m": "cba13ca2ce86e8dc9a7558b9263ecf7bf45461811cb80c2a86974f2952766135",
++    "Sources/SDKtools/STBilliardsResourceIO.h": "26757fc4ccdb39383ab11d25abeab3c59b645b0c3195278c8330487ad8db5e6c",
++    "Sources/SDKtools/STBilliardsRuntime.h": "a4105199c668bea94c13a14c9230e98a1cf5f5b67fa732c749f4e1b812f49b80",
++    "Sources/SDKtools/STBilliardsRuntime.m": "91066032ac80996c7e09038d4e26a25fd066cbb192c44a8a43140922ebb145db",
++    "Sources/SDKtools/STCardColorFeed.h": "889d6e9034a2bbe658c5619542953a5fc7be990516620424f3028e9c86fcc0ca",
++    "Sources/SDKtools/STCardColorFeed.m": "e7f48ae6ec3e5d2b0233689b1d8917d0a6a95b336c7ac0a9ef9d3c2f7b8f8b68",
++    "Sources/SDKtools/STCardEarlyCapture.h": "dcbf24e2c4c4dab6f0e086fa0dc5378450dc7fab240e42864c3237286b86e4ee",
++    "Sources/SDKtools/STCardEarlyCapture.m": "cabeb47787e0ef6b9ab1158d9637feb4f2b6fdc8d92b2a0cdd97c4ebdff14fe9",
++    "Sources/SDKtools/STCardEarlyRecorder.inc": "b72d6931b357accd324ac10df93edd9a01128884ebd3ef83fd4c270a55ecfe85",
++    "Sources/SDKtools/STCardEarlySanitizer.inc": "b314daa4f4ca602021d3f7e8d9f9c0bb97d6fe43ba0e2ffa6c3cc75fdd22ba65",
++    "Sources/SDKtools/STCardFeaturePolicy.h": "365a75ef8ffb4dede3a094be92ca617e94d6692c25513c1e361f61b276a1cddc",
++    "Sources/SDKtools/STCardFlowBridge.inc": "1abed99bb291682bbe0d1be0d2b0985b64a898807fd7f923a5284e211dc1282a",
++    "Sources/SDKtools/STCardFlowRecorder.inc": "e8f16020f9152deb49c4317d8603b2e507ae1aa8cc919721adc870bb26152087",
++    "Sources/SDKtools/STCardFlowSanitizer.inc": "b929ea226e71ac59ee4bcb68c3bf12d9ec56d53cb9272f68972bfdd8c2d378a5",
++    "Sources/SDKtools/STCardHintsBridge.inc": "9ebee06c475b19f4247afba60ec0d6049481d9d50a29d4a3b2d6dd36aa7db860",
++    "Sources/SDKtools/STCardHintsRecorder.inc": "c9ea1f57b6eea192dd2c25ae169a035938b78d2963388949293bf50e10a2ac63",
++    "Sources/SDKtools/STCardHintsSanitizer.inc": "2ed5dcba0a1b1aaa4391351b50e57c829a33b59520149a2084b6309eb63f8b7a",
++    "Sources/SDKtools/STCardInvestigationBridge.inc": "ea82b2d448e62699009c9e92e9dc53e428beebe36304774d82be37d5a6f72fee",
++    "Sources/SDKtools/STCardInvestigationRecorder.inc": "bc38246211379e971ceb08eb77e7860b4acb25ade5b557f2612e5f59b30b106b",
++    "Sources/SDKtools/STCardInvestigationSanitizer.inc": "99c0fdcada6794beae7b04616010af154756652721fd6737483427c8b7ff5fb8",
++    "Sources/SDKtools/STCardLifecycle.h": "4fbaf1d7ac42215dc97fabfe9da8f87f011a4df166fa639c9d7e9d40cf9b3e12",
++    "Sources/SDKtools/STCardRootRecorder.inc": "c192b44cce1eb04b5e4d3c4e80eba390b65d443f8cef351210a05b7293258e8b",
++    "Sources/SDKtools/STCardSamplerMenu.h": "e4be3acf7548426ef1623979754d24f485c8a810a912ad14c117756553034165",
++    "Sources/SDKtools/STGameSourceExporter.h": "e27f95cb7cafcffe2633bb735605cb0e8358021a019ccb2a8031c541126971ec",
++    "Sources/SDKtools/STGameSourceExporter.m": "fa5662c837a553c3983ce649f0f180f3e9c210746823aadc0ea362677882b9a1",
++    "Sources/SDKtools/STGameSourceIO.h": "709cdcde89d326a8dc9b59b80ba16219e894680f3f18f8e3c52408229413bc05",
++    "Sources/SDKtools/STGameSourceNativePath.inc": "3d3f73b101ca272dcf5a58cb7ce1d141342dd60c0ec35fda3636068c8a0e9296",
++    "Sources/SDKtools/STNativeActionPolicy.h": "95693deab515d68ae09624ffa5b9dfc765404ae81ddca16ebba9d15cc7c5fcc3",
++    "Sources/SDKtools/STNewGameCapture.inc": "ce37cbc25581423c104027ef090288ba8653ea97ed0f61b3ceae1d849448b0d4",
++    "Sources/SDKtools/STNewGameCapturePolicy.h": "814916a8c1123b07459fd274f8976bf269b56833a8e959eddc7209d35c9f7934",
++    "Sources/SDKtools/STOverlay.h": "f6a4146b5b3ad4deafffbee06c9fcb1a6f742593cc06c45273bc0c81784467c2",
++    "Sources/SDKtools/STOverlay.m": "ae204b56e1447e0c22afab0be897fea61284a79344cdcf64a0650647f74d4783",
++    "Sources/SDKtools/STPowerSanitizer.inc": "e66e6fd2fe686cfe4c4379acb1c53598fb20558a689ced740ec9ba84b20f9517",
++    "Sources/SDKtools/STRecorder.h": "d30a5750023995ccd1de2a73c3cddb0c87755b29fa080c31fd99e181968b9a53",
++    "Sources/SDKtools/STRecorder.m": "839d731689cdb19f8daa6319bbddf31308a973b781ca8cb24fae2e55b4393678",
++    "Sources/SDKtools/STSceneCodec.h": "bc7e04ea6cd323e38eed86245665eb3575e6e91fcba3e7e702b0a83a428bc245",
++    "Sources/SDKtools/STSceneCodec.m": "70f8cd02569e800966baa145dd033b7f5560a5af13072100449a68cf774be13d",
++    "Sources/SDKtools/STWarehouseBridge.inc": "d211631cc490aabf4b3dcec3bc7ea70e166bc474e473f488f76b64b01a16b453",
++    "Sources/SDKtools/STWarehouseSanitizer.inc": "1c176dd19628dd314bbe31064912777a6178dae88404a9eb2d673203e436c867",
++    "Sources/SDKtools/STWarehouseTestBridge.inc": "861e79527b85797fc2d3be845eed2d5603623d980fc67938da41815f86053409",
++    "Sources/SDKtools/STWarehouseTestRecorder.inc": "7b7e5a8557ba58349b8940b53804d3d79b937cc91bb6fe4455b802e05d25f582",
++    "Sources/SDKtools/STWarehouseTestSanitizer.inc": "dae151b0778e2355945c624e87e97ad0aa904367141b5b62bdd453d1cff4e075",
++    "Sources/SDKtools/STWebProbe.h": "a2517a733c083481a6b84a4b8f66dfa11b528bb9aecc68fede2bec7b10c07ba7",
++    "Sources/SDKtools/STWebProbe.m": "a2d73450399bb83e4a962703cf5ed63b492372b3c81b595d9deb513ff2392bcc",
++    "Sources/SDKtools/STWebProbeSanitizer.inc": "45522ae237b7535b8ced7aaed39dec00573b77f18100f74bbd6052502531dc77",
++    "Tests/autoplay_bridge_test.m": "af3ffe4dac077e0b4779cbbf0e1f95ae2daca6432ba1a595d8ac975eccb17e1c",
++    "Tests/autoplay_extended.test.cjs": "bf3a60fa368c74f226941dfbd589970baa776cb0125d232c14bb2e7819389ee5",
++    "Tests/autoplay_planner.test.cjs": "2cdd45eb354ec900200972a8aea169e191aebc13f67607d3481eae9fdb7e7883",
++    "Tests/autoplay_tool.test.cjs": "0e342e1c9fce6b31446a7910b24cc71c50681e2f67feb78a2b468af0f732f883",
++    "Tests/billiards_live_policy_test.c": "b28a49e5e0abf2a731e1ddad9036652c5f7f8c29e9991518a49bcfcffcab6ed3",
++    "Tests/billiards_live_snapshot_test.m": "c8823fab5faa6e3162ed2070cb0671f90087845670bd5351673d636118626f0f",
++    "Tests/billiards_numeric_policy_test.c": "cb6a5806a7b2ddcbb09d8ab8a7058b421040420d315a0cb9f16c727c4588b562",
++    "Tests/billiards_resource_exporter_test.m": "654ca5c2d3604b8b521103ae942c29b45cc83a66269f79ea9829469d3a717aa4",
++    "Tests/card_early.test.cjs": "1cbee758a2eec75088c527ac62e8a9e5eaddd00453662511ad41adf64d636796",
++    "Tests/card_early_disabled_test.m": "1d964509f23cec948250aa06859524bafbc791c1c7a59ebd5a45275c0bf734fb",
++    "Tests/card_early_fixture.cjs": "1cc06cfde14a1476051fd554c50565b5678df6c6891f3bc7a2754f73044f81b1",
++    "Tests/card_early_sanitizer_test.m": "fd3cc0f34edb85aaf2cc48631dd4c4f1a255b6ed73a33f1ab43128ee92816979",
++    "Tests/card_flow.test.cjs": "b4806c4ff901ca174bcc741800db82789544038cfa8825048e0f9788581d62b6",
++    "Tests/card_flow_bridge.test.cjs": "06cf47faf9be89d4312908f8dd8e26cb638e52a716a95c5c8a5c04b3f552dcde",
++    "Tests/card_flow_fixture.cjs": "06eb822f9b8f60460a1b27b2bc7df0c7ad7f86230f096e4b9b0872c2192dfedf",
++    "Tests/card_flow_sanitizer_test.m": "fea7ab6042061f775e1e8f379c012c57e0d997c8744ff511996074f831ae0a8b",
++    "Tests/card_flow_v310.test.cjs": "0148a856698faa288ba36f3a2a764fb8551c281685e411897084961946090e68",
++    "Tests/card_flow_v39.test.cjs": "326d576fe7cf92a1caf6e1663253f89ed875c87d97beed3b12f3d04debe77885",
++    "Tests/card_hand_badges.test.cjs": "7b5e2fb5b4f4cab74e234200728d594b08d362d9500a7dd24406bdcde4308de9",
++    "Tests/card_hand_counts.test.cjs": "e74e4eed81f9dfaf2693a3a787e067ecbd3b8a3598efcf4a7bfcc6be6ca5f395",
++    "Tests/card_hints.test.cjs": "2082b8ca119e59c8bae53d2ecf16238084050a95fa290b5519295f4bfc38d121",
++    "Tests/card_hints_bridge.test.cjs": "3723d5d43c6ed39a0496aa94749282c5c519701085ea0225eca76e79d0488e51",
++    "Tests/card_hints_bridge_test.m": "b1fc38d1f7c80c9a198190ff65be27527535e84e2b90b9cabadc3e7df2d04802",
++    "Tests/card_hints_enabled_test.m": "3f66dcd3615feb877c7c7eb9fc26ec89d62a96fc9e2c6feeb35405735f1bafe4",
++    "Tests/card_hints_fixture.cjs": "9207d33142c863003f4f28bc8fc184b8daa83e113a2aad7bc1ef87f289bcbcb1",
++    "Tests/card_investigation_bridge.test.cjs": "e41478ec7b089133e62b0454c03a36264fce43560887cd8160135adaf8f51832",
++    "Tests/card_investigation_sanitizer_test.m": "b016a45c53f1d00efb7f9119b7c4b2968ee261c98ee3e127de8420364073807e",
++    "Tests/card_live_test.m": "da4530d8f0e92a14b55198d9ac164e0c495a35b5b4452725ceee0df1988498f2",
++    "Tests/card_probe.test.cjs": "be75b6121eeeb769b5d54d6e3b927ac26b8ef8aa422ad4a9307684dc06d94e56",
++    "Tests/card_root.test.cjs": "53092414d4b66db30750f63f04a8d53511e90dec5ac053584cf5360ec280350c",
++    "Tests/card_root_command_test.m": "93dc9fa456a2a8cb415649d2a4c9f534cc1efaa23b511f1f3490a543082cc902",
++    "Tests/card_sampler.test.cjs": "e9493ee89a2f878e9767deca4485b699c23afc5d77705e525553f756696ebfd1",
++    "Tests/card_sampler_fixture.cjs": "b1459024449601904898389efedd7ceef09a1aed21f60f180fba4f64a26d6632",
++    "Tests/card_sampler_integration.test.cjs": "4a24b71ac608edb5959ffccad12b1d132bb34975b1e0436fcd4d59a737bc20b4",
++    "Tests/card_sampler_native_cases.inc": "d8a2097c6cd9a43c0ad4650eda008ecfee5fcfe4c520821f2de6baa530c3ce43",
++    "Tests/card_selected.test.cjs": "6bf7254e0d51a135dc15b0551e6c135e548a2adf2916246caf25c174b329e5b2",
++    "Tests/card_selected_fixture.cjs": "5ed6cac4ed6e0877c5ca6a2e206e9d9d0552eb1398a527a367b00aabc84e755f",
++    "Tests/fixtures/autoplay-board-observed-v25.json": "4cac3a5be1465b87915aeccc0342040451902eaf4cd506687b0b54790bf90065",
++    "Tests/fixtures/autoplay-board-observed-v26.json": "554438bb2b68f20a53138ffbb32b18fdcc95325ca614085eac6884ccd48433e2",
++    "Tests/fixtures/autoplay-board-observed-v29.json": "632b3dbe1e54e8d5feded3857a87be6096a76531f938ab05561dc3431466095e",
++    "Tests/fixtures/autoplay-board-observed-v30.json": "4d6bd1a2db7614cd58ce9b21a9ac4fca241a6caf07e98b8344a262c9bd617a7d",
++    "Tests/fixtures/autoplay-global-counterexample-v31.json": "b4a027e615dc7d53a0911a5f54435ddc071c08605e759a5815adf1cfa30d32dc",
++    "Tests/fixtures/billiard_manifest_baseline_v1047.svga": "dd5e85ab92eb8ce2b6b75464ac9d58e3939335a93163e3f1856d99cc2c69fdbf",
++    "Tests/fixtures/billiards-chain-v317-captured.json": "ae510b7e9136b976421ad6ecf526d5957fc17948489ecd8c92f7e079767e1862",
++    "Tests/fixtures/billiards-v3191-profile-capture.json": "566f227b128d536958a964b9fb659ce86ff79bbe7dcfc6b7fdf434bd24b618c4",
++    "Tests/fixtures/schema2_scene_reference.json": "1d10b4a8a39a02ec45e1c61e70b1a57fcf310e7e8dd60df7005ce07acc6ba7d3",
++    "Tests/fixtures/warehouse-row-observed-v26.json": "f6c62a4cc92d3a4f4ed8c099141b6fba75d6d57fc94fb97942d61f292c7f7adf",
++    "Tests/game_source_exporter_test.m": "0a829833ec27023bf9542d687b5fc0cd6af8ea220151734a04bdc0498875cbb1",
++    "Tests/game_source_io_test.c": "b984b5b34bdf82d15a1ebfeb04a1a0f0810324ec2d389631782fd3be69a00e76",
++    "Tests/game_source_native_path_test.m": "e076933aae7bcdece12dd9955267b95f767986ef6d4f0be94c5a8600d9374d54",
++    "Tests/native_action_policy_test.c": "25bfb485b3982dc9124249f3134636b7fe803fd453d11f091211cc06627afe62",
++    "Tests/new_game_capture_policy_test.c": "221f04445a5ac0dee1a6a93fa0516d5581cca6933f71b30b0d5385f5ed61dc4e",
++    "Tests/return_tool.test.cjs": "3d4eeaceea4e035aa07877360f7a405367f95999b48ef8999ccdfd2467aeaef9",
++    "Tests/scene_codec_test.m": "c5ade125bd405693069add4de8dcdb23a27fe1cfd3f4b9c0275f51583d79417e",
++    "Tests/scene_probe.test.cjs": "90bd393c9526a1b2db2f189295cf6a606e9713ff916f3975b47ef2c544405742",
++    "Tests/test_billiards_probe.lua": "381c0e4dfa803eeca40a7d938b8e5b87269476251c3b9308b2fac1c3bda3d3ab",
++    "Tests/test_billiards_resource_io.c": "de77093ce1109160478c4624082b3d581a4c8db0694614df57fd67dccfb3036d",
++    "Tests/test_capture_codec.py": "2920f1e5362a6d4a11a4136d9a81c918dc99e35787b91ae8d5133fd55106e8d7",
++    "Tests/test_card_activation_policy.py": "d3f6d924a0c9ef72b61d23fa185924ab09b204f2df970d14484411c3d07ead56",
++    "Tests/test_card_disabled_build.py": "427b4a134762c4bb0f6651d64541cfdc435ea58bfd8296bd5c9339206d599d87",
++    "Tests/test_card_early_analysis.py": "e1bfa9def363effe4d8e1ec17b274f263836a7a7d3490bfa74c9cfc2a4388fcc",
++    "Tests/test_objc_property_names.py": "6a2e1206b514b59ca68886c33bfb6688a10923a389c19cf98dc5bab7968ac03c",
++    "Tests/test_packaging.py": "3fac8b93f8bad48a935e68b95b0b6622851f07007a59a83b63841d5d879572d7",
++    "Tests/warehouse_test.test.cjs": "0e0ea80d5de14d2827318b035f7792bcfcb4bde335f67ae1e8390f2e1466386c",
++    "Tests/warehouse_tool.test.cjs": "e468c790ac8e55364a4f945b24442f9be96c78f0be9ca9bcf13c90fc6788b96d",
++    "Tests/web_probe_sanitizer_test.m": "195994e6ca30c04f020683e75e1e5e92071ff56f0161754c6abc2ddb36b71662",
++    "Tests/xray_overlay.test.cjs": "3a4df95b2dceafd865c2566e75c95f51ca537bfb6c2e959badcd5349f50a4c9e",
++    "Validation/V2-validation.json": "686cd38986307b1902fedfb9cd7cee7aa3488d49ad357b2b2a62ee893bdd5929",
++    "Validation/V2_1-validation.json": "e384cb2f2227cab8c817860b01f10cb743a01575de0d67cce35e46a3c52108fa",
++    "Validation/V2_2-validation.json": "b50aad814a3985ca425cfe075d6d5a304df7799d06d8273cb46b029633b7cd04",
++    "Validation/V2_3-validation.json": "ccbb20092b90a9cc65a4ce0b41494be9178250bcc936e47a8e6b54df463360b2",
++    "Validation/V2_4-validation.json": "72caf466276c6381bbd8c72d1a0ad9352262fa76a3119c4c49e0d5b7d250ebf7",
++    "Validation/V2_5-validation.json": "ed60227d5842a1e96d2281af38c153947fcd078ef57adc16dafa34064daaa409",
++    "Validation/V2_6-validation.json": "9dd63c335637983feb60ed52ef3430bdd7b5c6a7fc8b86ef3c51a4ed4670a8b7",
++    "Validation/V2_7-validation.json": "7d5b7b3c3172886717a2e25994c2ea08523c09e6583befb02f4b941692b1d22f",
++    "Validation/V2_8-validation.json": "04ea58489b7fb49c6b7e1330f6aac9f951f13ea59a598d8875ee7ad6528691bd",
++    "Validation/V2_8_1-validation.json": "2c14cb28ecd725ac871dbd29ad1d6393e2fe9d7303fd9a289546b505e57a28cd",
++    "Validation/V2_9-validation.json": "e580315d56ac5d38e25df122a9560f57f42c644b002c5a3d10e5cba9f3996cbc",
++    "Validation/V3_0-validation.json": "ae370715da57b3d18ff0c570a88efbfc050b86a883f604e3cadb9f57e4ceaf5b",
++    "Validation/V3_1-validation.json": "fb0795cca3ad100396c26aa3bae2300c45f3a9f01a17fd20b002c73848848b39",
++    "Validation/V3_10-validation.json": "7b006da4ad2855a6e18e5d90c43bdbb0b1970a577b45af4908a8af88604c0116",
++    "Validation/V3_11-validation.json": "babd04a8c630199dfd1df175d4fabf038c3bd5b581539cbe5eea173f38685804",
++    "Validation/V3_12-validation.json": "58d2668c885c10cafca67e26bfc5d20fa6af7718c5470e963d434c37449a092f",
++    "Validation/V3_13-test-results.txt": "06fc1c732675b718cf19b97ccc0eb9d42f75bf40f750955c23af1fcdd5388b45",
++    "Validation/V3_13-validation.json": "e9d02cffeeb6ce23dc528efb189997387c782befb5e61dc9e492f417e19e1c72",
++    "Validation/V3_14-test-results.txt": "45c6a634600d5af662f8fa6cad494c2ade52ee767787037c8a514ce253d2be93",
++    "Validation/V3_14-validation.json": "59d14d9ba8c018f2354c352d4cdc6f7b06aca7803b822b6870f530811cc6f1a4",
++    "Validation/V3_15-test-results.txt": "f637d3a04915227cca7cc64bb6fa59c3c2d6ec1e221f45a65b54287e2c79fd8f",
++    "Validation/V3_15-validation.json": "d5a0c5bd37d059676873fb524ff107e5595a75c3f5ba1693776d929aea361a93",
++    "Validation/V3_15_1-test-results.txt": "5250efbf1983588678c783f419161408d10e64e1566752941aa82ec02753865c",
++    "Validation/V3_15_1-validation.json": "8a72f3f76ce2166b81044a901f25f428b792adebdca2baa5e82321bf6e66a17b",
++    "Validation/V3_16-test-results.txt": "388ffad3ee38957f5883e793b8c4b7d5d0cbab8c9db88eb5b96f033a6bd39ee3",
++    "Validation/V3_16-validation.json": "53aded54cfaefd35d2c4563729cc83f76b76c81da6443b8d3d4fde6f7f560c77",
++    "Validation/V3_17-test-results.txt": "c2f3673954214d148fc5b738aaefc6567a9f9e5216773b8ceee89f4bdec06190",
++    "Validation/V3_17-validation.json": "71f65d1682d3047642749aec904870609e66986024b799bb824066faf453c529",
++    "Validation/V3_18-test-results.txt": "c69ae16f786235b46e50142ea1d51e9e371b1c7fea463b31783bfbd87d22ad67",
++    "Validation/V3_18-validation.json": "285992a07bc182a6a6c7022023cbce51913954f26385e73f13f6c88cb024e23a",
++    "Validation/V3_18_1-test-results.txt": "e8a67dc7d0a406e83ab8ae07b0b18738cda845b84bf0ef9ce1a100118d1de005",
++    "Validation/V3_18_1-validation.json": "38f5d0b98066a72907a6ddae44daf24cb590af6867d2f71030a48902bd663b28",
++    "Validation/V3_18_1-viewport-regression.json": "c2f9c8bf34e77add062727e39758f696378ff1addf05c4230e59e5df192f1338",
++    "Validation/V3_19-test-results.txt": "53fae3c0662104a4cbfd4cf5e4b0a7f947ca52df7cc96814f1c739bffa0e239e",
++    "Validation/V3_19-validation.json": "ff7b2d3bfcd2b56f96defb808938bcc7ca12205fd48625b2ce2f0d60be8496c9",
++    "Validation/V3_19_1-test-results.txt": "5abb336758fd73a6099cde12e55c7af1809bb633a6d2a0921746b8cb3f76aac6",
++    "Validation/V3_19_1-validation.json": "40e4fc31e95885c786cd8567831dcdd9cf9b3c471162edf30a231bfd64f0d07a",
++    "Validation/V3_19_1-viewport-regression.json": "f4a93b83abc06c14e6a1a22908c399f87353fe5da6cf33debeef015157e0c81f",
++    "Validation/V3_19_2-direction-regression.json": "312994cc43e5c40298cf9dafdd36b1e918077a248345c937eaa390c8e5f375a5",
++    "Validation/V3_19_2-validation.json": "a98968416fc641f0c2d72ca34251d209732e276e30953f6df00c441bf59587d0",
++    "Validation/V3_19_3-packaging-regression.json": "0628785cfd45696ad429d79ea68dc24118008761413e9a2e07f98df9c80068c0",
++    "Validation/V3_19_3-validation.json": "c4145ad0b66b2221ece325b24669ba2525591f67dbe568f77b103875a54ba70b",
++    "Validation/V3_19_4-validation.json": "05f426b9d8562f20305d5e5e8e137fa2a07a97fbbc545fc27a97d6eb58114ea0",
++    "Validation/V3_19_5-validation.json": "9ee435f347c3fe7e2522b86dc3a878978279d60eb26326288f6f571f613d1f3a",
++    "Validation/V3_19_6-validation.json": "d6d83a9177476aaf60bedbfd911d9a1ebf9a7c69ef96697e03144bb2294819de",
++    "Validation/V3_19_7-validation.json": "169d71cc80e106963e0a33e15fa3417a2a84c7121f3475af13ba94fa6f46dadc",
++    "Validation/V3_19_8-validation.json": "e394a326bb8688f11037c0fe9bfb7bebf695e4a993e53f435f20ae5f1d19313b",
++    "Validation/V3_19_9-validation.json": "1b17be6cccf74b74111957ff6b96b2a61e488662076571745ce40bfb9720f0dc",
++    "Validation/V3_2-validation.json": "bcc1300d789dd6338016c547c28a833fd6b20adbe77b65d32a71db02f4146157",
++    "Validation/V3_3-validation.json": "120ea948059c937aef64c8ab953a1e9e7bf4ddc37bdaadb04c717c678039cd27",
++    "Validation/V3_3_1-validation.json": "1c5d1892b009787456fda2d4a11850607102ef369ac4c3e7caf210d2fdc6ac33",
++    "Validation/V3_4-validation.json": "fdf3374f7b0329209d38d672ba5fed0ae3900161da770f26e434d6e0261e16f5",
++    "Validation/V3_5-validation.json": "af78adcaa6e6aec8b94040a27fd04a1b8af9d131137365db874ef41871684440",
++    "Validation/V3_5_1-validation.json": "9485062315706186585b7169f165e9ebb60e25b44ef7780b001dabbd76284ce3",
++    "Validation/V3_6-validation.json": "a81d2721d72786110a5f83f9eb54acf2d3f2de23e282a6952961450c71e31196",
++    "Validation/V3_7-validation.json": "76c06b48949a2d986c0067c17d8c511bc586ad1d511e5df99ee529ed0386be70",
++    "Validation/V3_8-validation.json": "9780c3c929a984ecadc1023d73b27ba697c06286609443b40db6f5c9e9ffbb5b",
++    "Validation/V3_9-validation.json": "c23901875441c9e4eb2721460e4c1f5c862c4407bbbb85034b3fc153910b3343",
++    "config/base_identity.json": "1488346cce95df0d4800f3d70596503808bb4b45d77dc8fdf94bf7e6417bc22c",
++    "scripts/analyze_card_early.py": "72507b900eba767d532e4801db4193333fbedc1d7985a1a297aac33d77382039",
++    "scripts/build_framework.sh": "5226c6d7288b6225a5ee577fe21355618559f2b76ba34ab2b1abbdaa187c0888",
++    "scripts/decode_capture.py": "b9df43893870f8e16bac3ecc632114dab227542925bb75d9f3346b1bb677ddfb",
++    "scripts/download_base.py": "48691d7d10eacb49e41e2ade8ac42567516320e6361be98ccf28fdf8cb638733",
++    "scripts/integrate_ipa.py": "7ce50359fb466e0f1d6a9af0aff8e2487d1f43c383c8dbc7001682fc9def0590",
++    "scripts/macho.py": "609921c278b144152ed3c944a7bc50929e1a85aa7fab2c025bb882f0469e410c",
++    "scripts/prepare_lua_test_library.py": "c7b21bf4f812c1c62b67af8be3fabdf1c88b72f2280fb0f3b8cd1302500b4147",
++    "scripts/test_autoplay_bridge.sh": "d3931c1b80d4ac9df2ef574e998374cf0d479fd5df9ef00032b69bd1bf2b39cf",
++    "scripts/test_billiards_live_policy.sh": "5b5945e9927c25619ea94a085ff6c7982079ae535f22c6f6bd76390d83984bc6",
++    "scripts/test_billiards_live_snapshot.sh": "dc8154f0d991d9bfd30c4efb526dd9954664b8649f49c3333732df90b029695f",
++    "scripts/test_billiards_lua_boundary.py": "264c8a72d0aa1e92e5d8b6a15b155654984f29c6f38f02903266e7d1f329d158",
++    "scripts/test_billiards_numeric_policy.sh": "ebeb519bfe1fd23ae15898940bee9c019ecaa1d8b1d7a5f50e609b5d09be2248",
++    "scripts/test_billiards_probe.py": "c8d4fa955c4fb7b9af9a75a0225ffd04a1ebbb93f71bda9139a31fe6060861c3",
++    "scripts/test_billiards_resource_foundation.sh": "b8b469a9e381c99aab25e851e6ef333c2fc15b3091244f0bb76b4938edb229e9",
++    "scripts/test_billiards_resource_io.sh": "278d265d8b366399bcb353a8fd1f26abe7183bc0307a482175ee0b516752a896",
++    "scripts/test_card_disabled.sh": "139e94daf6ae4c7450aec088df10949d42d988afbaaabf4da2cce245f0b12247",
++    "scripts/test_card_early.sh": "ab3756929a4aa152b72cb867a43609ae50b397143c5dbd1b464e157ebfe51b22",
++    "scripts/test_card_flow.sh": "5553fb341de3ff343c3163ff47931cb5a967fc87a0d8dd054c9d070dcb8d9fdd",
++    "scripts/test_card_hints_bridge.sh": "d6d18a27935d9be245305ef3478db8d2e93d0c8472f058ab7b7905c7aac9e6ed",
++    "scripts/test_card_investigation.sh": "8a31854145c1b48522bcd9f26771f332e643a50ecc4147c7fdd0306bb5000430",
++    "scripts/test_card_live.sh": "2ee32e329d67c7d0af6d0fa459d265e8f95294337daaa6eac98502ecca6398a2",
++    "scripts/test_game_source_export.sh": "e6993a4834e3a3d1ba4d86739b2532a569c929fb6910321b9eccadd3082b950c",
++    "scripts/test_game_source_foundation.sh": "e1261d8b1d6f70e492e1f0c3524dff10b0ca2b08a3c36bb21fcdd407a628634a",
++    "scripts/test_native_action_policy.sh": "6837c1afed4a37ca70efb7fb3cb8103e6d7343659bfa810ac475a47ed1f16b83",
++    "scripts/test_new_game_capture.sh": "7c2d64c23510ddca8492722eb161cb1c6eefe16c469e9efd222d4ca705f9e1eb",
++    "scripts/test_scene_codec.sh": "b191e7e8c56614d78e56b0185b0ceecc5eb12d72a0d2cf49b88e29f9ba9af594",
++    "scripts/test_web_probe.sh": "345390afca09f32ec701ce3feb14ef75582dc665743ed332135b08c46b5a10b3"
++  }
++}
+--- a/scripts/build_framework.sh
++++ b/scripts/build_framework.sh
+@@ -43,14 +43,14 @@
+   -Wall -Wextra -Werror=implicit-function-declaration \
+   -I Sources/SDKtools -install_name '@rpath/SDKtools.framework/SDKtools' \
+   -Wl,-rpath,@loader_path/Frameworks -Wl,-headerpad_max_install_names \
+-  -Wl,-no_adhoc_codesign -current_version 3.19.9 -compatibility_version 1.0.0 \
++  -Wl,-no_adhoc_codesign -current_version 3.20.0 -compatibility_version 1.0.0 \
+   -framework Foundation -framework CoreFoundation -framework UIKit -framework WebKit -framework ReplayKit \
+   -framework QuartzCore \
+   "${sources[@]}" -o "$framework/SDKtools"
+ xcrun dsymutil "$framework/SDKtools" -o "$build_workspace/SDKtools.framework.dSYM"
+ [[ -f Resources/scene_probe.js ]] || fail 'O probe JavaScript está ausente.'
+ [[ -f Resources/return_tool.js ]] || fail 'O recurso dos poderes está ausente.'
+-[[ -f Resources/autoplay_tool.js && -f Resources/autoplay_planner.js ]] || fail 'Os recursos de autoplay estão ausentes.'
++[[ -f Resources/autoplay_tool.js && -f Resources/autoplay_planner.js && -f Resources/autoplay_extended.js && -f Resources/autoplay_powers.js ]] || fail 'Os recursos de autoplay estão ausentes.'
+ [[ -f Resources/xray_overlay.js && -f Resources/warehouse_tool.js && -f Resources/warehouse_test.js ]] || fail 'Os recursos de Raio X e armazém estão ausentes.'
+ [[ -f Resources/card_hints.js && -f Resources/card_root.js && -f Resources/card_sampler.js ]] || fail 'O recurso Ver cartas está ausente.'
+ [[ -f Resources/card_flow.js && -f Resources/card_early.js ]] || fail 'O exportador da origem das cartas está ausente.'
+--- a/scripts/integrate_ipa.py
++++ b/scripts/integrate_ipa.py
+@@ -27,7 +27,7 @@
+ MAX_CENTRAL = 64 * 1024**2
+ # Match the native Lua reader's 128 KiB cap. JavaScript readers retain 64 KiB.
+ TOOL_RESOURCE_LIMITS = {name: 64 * 1024 for name in (
+-    'scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js',
++    'scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'autoplay_extended.js', 'autoplay_powers.js',
+     'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js',
+     'card_flow.js', 'card_root.js', 'card_early.js', 'card_sampler.js')}
+ TOOL_RESOURCE_LIMITS['billiards_probe.lua'] = 128 * 1024
+@@ -132,7 +132,7 @@
+     require('SDKtools' in files and 'Info.plist' in files, 'Framework incompleto.')
+     info = plistlib.loads(files['Info.plist'])
+     require(info.get('CFBundleExecutable') == 'SDKtools' and info.get('CFBundlePackageType') == 'FMWK' and info.get('CFBundleSupportedPlatforms') == ['iPhoneOS'] and info.get('MinimumOSVersion') == '15.0', 'Info.plist do framework incompatível.')
+-    require(info.get('CFBundleShortVersionString') == '3.19.9' and info.get('CFBundleVersion') == '45', 'Este pacote exige SDKtools 3.19.9, build 45. Framework de outra versão recusado.')
++    require(info.get('CFBundleShortVersionString') == '3.20.0' and info.get('CFBundleVersion') == '46', 'Este pacote exige SDKtools 3.20.0, build 46. Framework de outra versão recusado.')
+     for resource, limit in TOOL_RESOURCE_LIMITS.items():
+         candidates = [name for name in (resource, 'Resources/' + resource) if name in files]
+         require(len(candidates) == 1, 'Recurso obrigatório ausente ou duplicado: ' + resource)
