@@ -160,7 +160,7 @@
 +}
 --- a/Analysis/V3_21_0-billiards-strategy.md
 +++ b/Analysis/V3_21_0-billiards-strategy.md
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,129 @@
 +# Bilhar 3.21.0 / build 47 — evidência, implementação e limites
 +
 +## Identidade e REA
@@ -204,6 +204,24 @@
 +  aimBallPos e correções de rebound. Não é uma consulta pura. Nenhuma busca de
 +  candidatos do SDK o chama; só o fluxo original de release o faz como no jogo.
 +
++## Conferência binária adicional da cena
++
++O UnityFS Scene cache1084 (SHA256 99110f8cb6061c9476addbfef64efefb397e4dce31136eae1c17169237fce199)
++contém BuildPlayer-BilliardInGame (SHA256 de641a5b11a8130a0a8fab4d110bf0019f7187394c97bb3ff861c2fe2f7e872e),
++generator2022.3.62f1. Parser binário limitado de GameObject/Transform recuperou
++a hierarquia e compôs TRS/quaternions, sem executar o jogo. Código e resultados
++reproduzíveis estão nos arquivos V3_21_0-read-scene-geometry.py e
++V3_21_0-binary-scene-geometry.json; não se trata de pseudocódigo produzido pelo REA.
++
++**Correções encontradas antes da entrega final:** Table/Pots tem sete filhos:
++seis caçapas e PotsRollBalls. As centrais têm z≈2.93597 e−2.96946, mas os cantos
++usados pela IA para tabela ficam em≈2.83122 e−2.84941. Usar extremos de todas
++as caçapas ou exigir childCount6 tornaria a automação inoperante/incorreta.
++O código filtra as seis caçapas conhecidas e usa os cantos potUpRight/potDownLeft,
++com os insets0.07/0.15 e raio vivo. Fixture numérico derivado desta cena fixa
++a regressão. Mais um cast vertical revalida a superfície/material vivo sob a
++branca; tabelas também exigem material vivo correspondente.
++
 +## Implementado
 +
 +1. **Leitura** continua inerte. `sample` e `stop` não alteram jogo/mesa.
@@ -238,7 +256,7 @@
 +9. Toque manual, abrir menu e segundo plano pausam. Nova ativação é explícita.
 +   Final de partida é terminal. Nenhuma chamada a reqReady, reqMatch, revanche
 +   ou Continuar. O SDK não compra nada nem inicia nova fila.
-+10. HUD passivo compacto: estado, bola/caçapa, força, tacadas solicitadas,
++10. HUD passivo compacto: estado, bola/caçapa, força, tacadas solicitadas na ativação atual,
 +    amostras de calibração e tempo desde início da leitura. Export inclui
 +    até64 registros de automação. Solicitação não equivale a acerto confirmado.
 +
@@ -272,6 +290,2044 @@
 +Alpaca (missões/Turbo/planejamento/poderes) e todos os15 JavaScripts de recursos
 +permanecem byte a byte na versão3.20.0. Alteração de STRecorder é apenas pausa
 +passiva do Bilhar e string de versão; Cartas não recebe novas suposições de cor.
+--- a/Analysis/V3_21_0-binary-scene-geometry.json
++++ b/Analysis/V3_21_0-binary-scene-geometry.json
+@@ -0,0 +1,1954 @@
++{
++  "source": "work\\billiards-runtime\\unpacked\\scene\\BuildPlayer-BilliardInGame",
++  "sha256": "de641a5b11a8130a0a8fab4d110bf0019f7187394c97bb3ff861c2fe2f7e872e",
++  "method": "bounded binary GameObject/Transform layout parser; local transforms only, not executed",
++  "objectCount": 219,
++  "gameObjectCount": 56,
++  "transformCount": 56,
++  "parseErrors": [],
++  "selected": [
++    {
++      "path": "Table/Pots/potDownRight/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        -5.4511402630710935,
++        1.4510084145663076,
++        -2.696400242048429
++      ],
++      "id": 57,
++      "gameObject": [
++        0,
++        1
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        1.0,
++        0.0
++      ],
++      "localPosition": [
++        0.3100000023841858,
++        0.41999998688697815,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        59
++      ],
++      "object": {
++        "path_id": 57,
++        "offset": 172704,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownRight",
++      "name": "potDownRight",
++      "worldPosition": [
++        -5.5506502726686335,
++        -0.15399192542051887,
++        -2.8312204835656227
++      ],
++      "id": 59,
++      "gameObject": [
++        0,
++        3
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -4.625999927520752,
++        -3.3259999752044678,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          98
++        ],
++        [
++          0,
++          57
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 59,
++        "offset": 172848,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/upLeft",
++      "name": "upLeft",
++      "worldPosition": [
++        -4.599999843855167,
++        -1.2739583170888713,
++        1.860000004407057
++      ],
++      "id": 60,
++      "gameObject": [
++        0,
++        4
++      ],
++      "rotation": [
++        0.08682411164045334,
++        -0.08682408183813095,
++        -0.9924039244651794,
++        -0.007596286479383707
++      ],
++      "localPosition": [
++        -7.135710716247559,
++        1.4067184925079346,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872220635414124
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 60,
++        "offset": 172944,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/upCenter",
++      "name": "upCenter",
++      "worldPosition": [
++        0.009999947492911866,
++        -1.2739583251503948,
++        1.9199999538978265
++      ],
++      "id": 62,
++      "gameObject": [
++        0,
++        6
++      ],
++      "rotation": [
++        1.4199474485110386e-08,
++        0.08715575188398361,
++        0.9961947202682495,
++        -1.6230072219514113e-07
++      ],
++      "localPosition": [
++        -2.5257108211517334,
++        1.4667184352874756,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872217655181885
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 62,
++        "offset": 173096,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpLeft",
++      "name": "potUpLeft",
++      "worldPosition": [
++        5.539365319951742,
++        -0.15399268472437377,
++        2.8200925511364865
++      ],
++      "id": 65,
++      "gameObject": [
++        0,
++        9
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        5.738500118255615,
++        1.9556000232696533,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          96
++        ],
++        [
++          0,
++          70
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 65,
++        "offset": 173312,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/table",
++      "name": "table",
++      "worldPosition": [
++        0.0,
++        0.0065077299900944685,
++        2.3002236837488255e-08
++      ],
++      "id": 66,
++      "gameObject": [
++        0,
++        10
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.0,
++        0.0,
++        -0.1599999964237213
++      ],
++      "localScale": [
++        28.299999237060547,
++        28.299999237060547,
++        28.299999237060547
++      ],
++      "children": [
++        [
++          0,
++          68
++        ],
++        [
++          0,
++          67
++        ]
++      ],
++      "parent": [
++        0,
++        77
++      ],
++      "object": {
++        "path_id": 66,
++        "offset": 173408,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/table/canvas",
++      "name": "canvas",
++      "worldPosition": [
++        0.0,
++        -0.25584302685737115,
++        -1.2246906114232736e-08
++      ],
++      "id": 67,
++      "gameObject": [
++        0,
++        11
++      ],
++      "rotation": [
++        1.0,
++        0.0,
++        -0.0,
++        7.549790126404332e-08
++      ],
++      "localPosition": [
++        -0.0,
++        0.0,
++        0.008663872256875038
++      ],
++      "localScale": [
++        101.0,
++        100.0,
++        100.0
++      ],
++      "children": [],
++      "parent": [
++        0,
++        66
++      ],
++      "object": {
++        "path_id": 67,
++        "offset": 173504,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/table/bumpers",
++      "name": "bumpers",
++      "worldPosition": [
++        0.0,
++        -0.9019223918019927,
++        -9.905337905458111e-08
++      ],
++      "id": 68,
++      "gameObject": [
++        0,
++        12
++      ],
++      "rotation": [
++        1.0,
++        0.0,
++        -0.0,
++        7.549790126404332e-08
++      ],
++      "localPosition": [
++        -0.0,
++        0.0,
++        0.029999999329447746
++      ],
++      "localScale": [
++        102.0,
++        101.0,
++        300.0
++      ],
++      "children": [],
++      "parent": [
++        0,
++        66
++      ],
++      "object": {
++        "path_id": 68,
++        "offset": 173576,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpCenter/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        0.0026499142400544114,
++        1.4510076456015164,
++        3.0268167744228602
++      ],
++      "id": 69,
++      "gameObject": [
++        0,
++        13
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        1.0,
++        0.0
++      ],
++      "localPosition": [
++        -0.019999999552965164,
++        0.28299999237060547,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        79
++      ],
++      "object": {
++        "path_id": 69,
++        "offset": 173648,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpLeft/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        5.430225309116809,
++        1.4510076867467654,
++        2.7205827438148793
++      ],
++      "id": 70,
++      "gameObject": [
++        0,
++        14
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.3400000035762787,
++        -0.3100000023841858,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        65
++      ],
++      "object": {
++        "path_id": 70,
++        "offset": 173720,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/downRight",
++      "name": "downRight",
++      "worldPosition": [
++        4.609999987021356,
++        -1.2739578011508537,
++        -1.9800005776998986
++      ],
++      "id": 72,
++      "gameObject": [
++        0,
++        16
++      ],
++      "rotation": [
++        -0.08682411164045334,
++        0.08682408183813095,
++        -0.9924039244651794,
++        -0.007596286479383707
++      ],
++      "localPosition": [
++        2.074289321899414,
++        -2.433281660079956,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872220635414124
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 72,
++        "offset": 173864,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownLeft",
++      "name": "potDownLeft",
++      "worldPosition": [
++        5.540969948593329,
++        -0.15399192297653652,
++        -2.8494104440431647
++      ],
++      "id": 73,
++      "gameObject": [
++        0,
++        17
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        5.739999771118164,
++        -3.3429999351501465,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          97
++        ],
++        [
++          0,
++          89
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 73,
++        "offset": 173936,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/TableSpriteDownside",
++      "name": "TableSpriteDownside",
++      "worldPosition": [
++        0.0,
++        -0.33910233223971076,
++        -2.343352967226764e-08
++      ],
++      "id": 74,
++      "gameObject": [
++        0,
++        18
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        -0.7071068286895752,
++        0.7071068286895752
++      ],
++      "localPosition": [
++        0.0,
++        -0.0,
++        0.16300000250339508
++      ],
++      "localScale": [
++        1.0390000343322754,
++        1.0499999523162842,
++        1.0230000019073486
++      ],
++      "children": [],
++      "parent": [
++        0,
++        77
++      ],
++      "object": {
++        "path_id": 74,
++        "offset": 174032,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpRight",
++      "name": "potUpRight",
++      "worldPosition": [
++        -5.5506502726686335,
++        -0.1539926862195098,
++        2.8312204864408996
++      ],
++      "id": 75,
++      "gameObject": [
++        0,
++        19
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -4.625999927520752,
++        1.965999960899353,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          94
++        ],
++        [
++          0,
++          85
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 75,
++        "offset": 174104,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table",
++      "name": "Table",
++      "worldPosition": [
++        0.0,
++        -0.16469229757785797,
++        0.0
++      ],
++      "id": 77,
++      "gameObject": [
++        0,
++        21
++      ],
++      "rotation": [
++        0.7071068286895752,
++        0.0,
++        0.0,
++        0.7071068286895752
++      ],
++      "localPosition": [
++        0.0,
++        -0.16469229757785797,
++        0.0
++      ],
++      "localScale": [
++        1.0700000524520874,
++        1.0700000524520874,
++        1.0700000524520874
++      ],
++      "children": [
++        [
++          0,
++          91
++        ],
++        [
++          0,
++          83
++        ],
++        [
++          0,
++          66
++        ],
++        [
++          0,
++          74
++        ],
++        [
++          0,
++          104
++        ]
++      ],
++      "parent": [
++        0,
++        0
++      ],
++      "object": {
++        "path_id": 77,
++        "offset": 174272,
++        "size": 128,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/downLeft",
++      "name": "downLeft",
++      "worldPosition": [
++        -4.630000052988363,
++        -1.2739578011508537,
++        -1.9800005776998986
++      ],
++      "id": 78,
++      "gameObject": [
++        0,
++        22
++      ],
++      "rotation": [
++        -0.08682411164045334,
++        -0.08682408183813095,
++        0.9924039244651794,
++        -0.007596286479383707
++      ],
++      "localPosition": [
++        -7.165710926055908,
++        -2.433281660079956,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872220635414124
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 78,
++        "offset": 174400,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpCenter",
++      "name": "potUpCenter",
++      "worldPosition": [
++        0.009069914666376633,
++        -0.15399270029400913,
++        2.9359735409573906
++      ],
++      "id": 79,
++      "gameObject": [
++        0,
++        23
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.5699999928474426,
++        2.0638999938964844,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          93
++        ],
++        [
++          0,
++          69
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 79,
++        "offset": 174472,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/downCenter",
++      "name": "downCenter",
++      "worldPosition": [
++        0.009999947492911866,
++        -1.2739578011508537,
++        -1.9800005776998986
++      ],
++      "id": 81,
++      "gameObject": [
++        0,
++        25
++      ],
++      "rotation": [
++        -1.4199474485110386e-08,
++        0.08715575188398361,
++        -0.9961947202682495,
++        -1.6230072219514113e-07
++      ],
++      "localPosition": [
++        -2.5257108211517334,
++        -2.433281660079956,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872217655181885
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 81,
++        "offset": 174640,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders",
++      "name": "PotsBallsColliders",
++      "worldPosition": [
++        2.535710711803688,
++        -2.4116926684908124,
++        0.4532812016874552
++      ],
++      "id": 83,
++      "gameObject": [
++        0,
++        27
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        2.3698229789733887,
++        0.42362749576568604,
++        2.0999999046325684
++      ],
++      "localScale": [
++        0.9345793724060059,
++        0.9345793724060059,
++        0.9345793724060059
++      ],
++      "children": [
++        [
++          0,
++          60
++        ],
++        [
++          0,
++          84
++        ],
++        [
++          0,
++          62
++        ],
++        [
++          0,
++          78
++        ],
++        [
++          0,
++          72
++        ],
++        [
++          0,
++          81
++        ]
++      ],
++      "parent": [
++        0,
++        77
++      ],
++      "object": {
++        "path_id": 83,
++        "offset": 174784,
++        "size": 140,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/PotsBallsColliders/upRight",
++      "name": "upRight",
++      "worldPosition": [
++        4.609999987021356,
++        -1.2739583197760458,
++        1.8799999875706466
++      ],
++      "id": 84,
++      "gameObject": [
++        0,
++        28
++      ],
++      "rotation": [
++        0.08682411164045334,
++        0.08682408183813095,
++        0.9924039244651794,
++        -0.007596286479383707
++      ],
++      "localPosition": [
++        2.074289321899414,
++        1.4267184734344482,
++        -1.1377344131469727
++      ],
++      "localScale": [
++        2.6872220039367676,
++        2.6872220039367676,
++        0.26872220635414124
++      ],
++      "children": [],
++      "parent": [
++        0,
++        83
++      ],
++      "object": {
++        "path_id": 84,
++        "offset": 174928,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpRight/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        -5.438300264610086,
++        1.4510076839577533,
++        2.741340681650561
++      ],
++      "id": 85,
++      "gameObject": [
++        0,
++        29
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.7071068286895752,
++        0.7071068286895752
++      ],
++      "localPosition": [
++        0.3499999940395355,
++        -0.2800000011920929,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        75
++      ],
++      "object": {
++        "path_id": 85,
++        "offset": 175000,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownCenter/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        0.0008309501816867737,
++        1.4510084620371726,
++        -3.0497142915835216
++      ],
++      "id": 86,
++      "gameObject": [
++        0,
++        30
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.0,
++        -0.25,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        87
++      ],
++      "object": {
++        "path_id": 86,
++        "offset": 175072,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownCenter",
++      "name": "potDownCenter",
++      "worldPosition": [
++        0.0008309501816867737,
++        -0.15399190684621455,
++        -2.9694644893244506
++      ],
++      "id": 87,
++      "gameObject": [
++        0,
++        31
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.5623000264167786,
++        -3.455199956893921,
++        0.20000000298023224
++      ],
++      "localScale": [
++        0.30000001192092896,
++        0.30000001192092896,
++        0.30000001192092896
++      ],
++      "children": [
++        [
++          0,
++          95
++        ],
++        [
++          0,
++          86
++        ]
++      ],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 87,
++        "offset": 175144,
++        "size": 92,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/GameObject",
++      "name": "GameObject",
++      "worldPosition": [
++        0.010700000285357225,
++        -6.56329398303143,
++        3.659399892984874
++      ],
++      "id": 88,
++      "gameObject": [
++        0,
++        32
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.0,
++        0.0,
++        0.0
++      ],
++      "localScale": [
++        0.6660000085830688,
++        0.6660000085830688,
++        0.6660000085830688
++      ],
++      "children": [],
++      "parent": [
++        0,
++        104
++      ],
++      "object": {
++        "path_id": 88,
++        "offset": 175240,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownLeft/CalledPocket",
++      "name": "CalledPocket",
++      "worldPosition": [
++        5.438249941772173,
++        1.4510084178728724,
++        -2.721010197835785
++      ],
++      "id": 89,
++      "gameObject": [
++        0,
++        33
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        -0.7071068286895752,
++        0.7071068286895752
++      ],
++      "localPosition": [
++        -0.3199999928474426,
++        0.4000000059604645,
++        -5.0
++      ],
++      "localScale": [
++        3.299999952316284,
++        3.299999952316284,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        73
++      ],
++      "object": {
++        "path_id": 89,
++        "offset": 175312,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/PotsRollBalls",
++      "name": "PotsRollBalls",
++      "worldPosition": [
++        0.3879826235227881,
++        -2.9321927321672834,
++        0.4321846310049513
++      ],
++      "id": 90,
++      "gameObject": [
++        0,
++        34
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.924124002456665,
++        -0.2760888636112213,
++        2.7964484691619873
++      ],
++      "localScale": [
++        0.9345793724060059,
++        0.9345793724060059,
++        0.9345793724060059
++      ],
++      "children": [],
++      "parent": [
++        0,
++        91
++      ],
++      "object": {
++        "path_id": 90,
++        "offset": 175384,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots",
++      "name": "Pots",
++      "worldPosition": [
++        -0.6008301075780764,
++        0.060007638852539125,
++        0.7276001712706016
++      ],
++      "id": 91,
++      "gameObject": [
++        0,
++        35
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.5615234375,
++        0.6800000071525574,
++        -0.20999999344348907
++      ],
++      "localScale": [
++        1.0,
++        1.0,
++        1.0
++      ],
++      "children": [
++        [
++          0,
++          75
++        ],
++        [
++          0,
++          59
++        ],
++        [
++          0,
++          65
++        ],
++        [
++          0,
++          79
++        ],
++        [
++          0,
++          73
++        ],
++        [
++          0,
++          87
++        ],
++        [
++          0,
++          90
++        ]
++      ],
++      "parent": [
++        0,
++        77
++      ],
++      "object": {
++        "path_id": 91,
++        "offset": 175456,
++        "size": 152,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpCenter/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        -0.0037700861862678104,
++        1.451007662680679,
++        2.8997007491416813
++      ],
++      "id": 93,
++      "gameObject": [
++        0,
++        38
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.03999999910593033,
++        -0.11299999803304672,
++        -5.0
++      ],
++      "localScale": [
++        2.5,
++        2.5,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        79
++      ],
++      "object": {
++        "path_id": 93,
++        "offset": 175680,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpRight/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        -5.444720259057316,
++        1.4510076843890447,
++        2.738130683995654
++      ],
++      "id": 94,
++      "gameObject": [
++        0,
++        39
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.33000001311302185,
++        -0.28999999165534973,
++        -5.0
++      ],
++      "localScale": [
++        3.115264654159546,
++        3.115264654159546,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        75
++      ],
++      "object": {
++        "path_id": 94,
++        "offset": 175752,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownCenter/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        -0.008799050457796559,
++        1.4510084458637238,
++        -2.9293392647259395
++      ],
++      "id": 95,
++      "gameObject": [
++        0,
++        37
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.029999999329447746,
++        0.125,
++        -5.0
++      ],
++      "localScale": [
++        2.5,
++        2.5,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        87
++      ],
++      "object": {
++        "path_id": 95,
++        "offset": 175824,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potUpLeft/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        5.4238053051030315,
++        1.4510076876093496,
++        2.7141627389385174
++      ],
++      "id": 96,
++      "gameObject": [
++        0,
++        41
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.36000001430511475,
++        -0.33000001311302185,
++        -5.0
++      ],
++      "localScale": [
++        3.115264654159546,
++        3.115264654159546,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        65
++      ],
++      "object": {
++        "path_id": 96,
++        "offset": 175896,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownLeft/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        5.4350399349820115,
++        1.4510084191667485,
++        -2.730640200367053
++      ],
++      "id": 97,
++      "gameObject": [
++        0,
++        42
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        -0.33000001311302185,
++        0.3700000047683716,
++        -5.0
++      ],
++      "localScale": [
++        3.115265369415283,
++        3.115265369415283,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        73
++      ],
++      "object": {
++        "path_id": 97,
++        "offset": 175968,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/Pots/potDownRight/CallPocket",
++      "name": "CallPocket",
++      "worldPosition": [
++        -5.4511402630710935,
++        1.4510084158601833,
++        -2.706030244579697
++      ],
++      "id": 98,
++      "gameObject": [
++        0,
++        40
++      ],
++      "rotation": [
++        -0.0,
++        -0.0,
++        -0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.3100000023841858,
++        0.38999998569488525,
++        -5.0
++      ],
++      "localScale": [
++        3.115264654159546,
++        3.115264654159546,
++        3.115264654159546
++      ],
++      "children": [],
++      "parent": [
++        0,
++        59
++      ],
++      "object": {
++        "path_id": 98,
++        "offset": 176040,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls2",
++      "name": "RollsPotedBalls2",
++      "worldPosition": [
++        0.030870665951098684,
++        -6.302662194424001,
++        4.057091463324405
++      ],
++      "id": 100,
++      "gameObject": [
++        0,
++        44
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        1.7039999961853027,
++        -1.0099999904632568,
++        -0.23999999463558197
++      ],
++      "localScale": [
++        0.4205499291419983,
++        5.496220588684082,
++        1.0837737321853638
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 100,
++        "offset": 176208,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls6",
++      "name": "RollsPotedBalls6",
++      "worldPosition": [
++        3.27309195487571,
++        -6.359478011842477,
++        3.933075839939278
++      ],
++      "id": 101,
++      "gameObject": [
++        0,
++        45
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        -0.9326799511909485,
++        0.36070510745048523
++      ],
++      "localPosition": [
++        1.590000033378601,
++        -3.6619999408721924,
++        0.17000000178813934
++      ],
++      "localScale": [
++        1.0420728921890259,
++        0.40764713287353516,
++        1.1335265636444092
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 101,
++        "offset": 176280,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls5",
++      "name": "RollsPotedBalls5",
++      "worldPosition": [
++        2.3155873621922356,
++        -5.933371195057161,
++        2.7581896888337134
++      ],
++      "id": 102,
++      "gameObject": [
++        0,
++        46
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.5099999904632568,
++        -2.9200000762939453,
++        -0.3199999928474426
++      ],
++      "localScale": [
++        1.0301109552383423,
++        0.4031454920768738,
++        1.1083709001541138
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 102,
++        "offset": 176352,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls3",
++      "name": "RollsPotedBalls3",
++      "worldPosition": [
++        3.0981045188608287,
++        -5.848385645816864,
++        3.3238756204862856
++      ],
++      "id": 103,
++      "gameObject": [
++        0,
++        47
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        1.0299999713897705,
++        -3.569999933242798,
++        -0.3100000023841858
++      ],
++      "localScale": [
++        1.917522668838501,
++        0.9728437662124634,
++        1.0837737321853638
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 103,
++        "offset": 176424,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls",
++      "name": "RollPotedBalls",
++      "worldPosition": [
++        0.010700000285357225,
++        -6.56329398303143,
++        3.659399892984874
++      ],
++      "id": 104,
++      "gameObject": [
++        0,
++        48
++      ],
++      "rotation": [
++        0.04316781461238861,
++        0.04316781461238861,
++        0.7057878971099854,
++        0.7057878971099854
++      ],
++      "localPosition": [
++        0.009999999776482582,
++        3.4200000762939453,
++        5.980000019073486
++      ],
++      "localScale": [
++        1.0,
++        1.0,
++        1.0
++      ],
++      "children": [
++        [
++          0,
++          106
++        ],
++        [
++          0,
++          105
++        ],
++        [
++          0,
++          88
++        ]
++      ],
++      "parent": [
++        0,
++        77
++      ],
++      "object": {
++        "path_id": 104,
++        "offset": 176496,
++        "size": 104,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/Cube",
++      "name": "Cube",
++      "worldPosition": [
++        -0.3269163070721322,
++        -6.798794503255348,
++        3.9054999071885623
++      ],
++      "id": 105,
++      "gameObject": [
++        0,
++        49
++      ],
++      "rotation": [
++        0.0,
++        -0.055908698588609695,
++        0.0,
++        0.998435914516449
++      ],
++      "localPosition": [
++        0.23000000417232513,
++        0.3400000035762787,
++        0.18000000715255737
++      ],
++      "localScale": [
++        1.6339962482452393,
++        6.625588893890381,
++        1.0
++      ],
++      "children": [],
++      "parent": [
++        0,
++        104
++      ],
++      "object": {
++        "path_id": 105,
++        "offset": 176600,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls",
++      "name": "RollBallsWalls",
++      "worldPosition": [
++        -1.1507448569346446,
++        -6.714035047808835,
++        2.2033821410974967
++      ],
++      "id": 106,
++      "gameObject": [
++        0,
++        50
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        -1.3607639074325562,
++        1.0945404767990112,
++        0.0075450316071510315
++      ],
++      "localScale": [
++        1.0166890621185303,
++        1.131619930267334,
++        1.029221534729004
++      ],
++      "children": [
++        [
++          0,
++          108
++        ],
++        [
++          0,
++          100
++        ],
++        [
++          0,
++          103
++        ],
++        [
++          0,
++          107
++        ],
++        [
++          0,
++          102
++        ],
++        [
++          0,
++          101
++        ]
++      ],
++      "parent": [
++        0,
++        104
++      ],
++      "object": {
++        "path_id": 106,
++        "offset": 176672,
++        "size": 140,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls4",
++      "name": "RollsPotedBalls4",
++      "worldPosition": [
++        -2.8817746579094154,
++        -6.2275702441334175,
++        3.7590183653301112
++      ],
++      "id": 107,
++      "gameObject": [
++        0,
++        51
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        1.4299999475479126,
++        1.3700000047683716,
++        -0.6299999952316284
++      ],
++      "localScale": [
++        1.5392520427703857,
++        0.5259574055671692,
++        1.0837737321853638
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 107,
++        "offset": 176816,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    },
++    {
++      "path": "Table/RollPotedBalls/RollBallsWalls/RollsPotedBalls1",
++      "name": "RollsPotedBalls1",
++      "worldPosition": [
++        -0.11352886275421745,
++        -6.020816936656036,
++        2.931158989855218
++      ],
++      "id": 108,
++      "gameObject": [
++        0,
++        52
++      ],
++      "rotation": [
++        0.0,
++        0.0,
++        0.0,
++        1.0
++      ],
++      "localPosition": [
++        0.6690000295639038,
++        -0.9200000166893005,
++        -0.5099999904632568
++      ],
++      "localScale": [
++        1.0321136713027954,
++        6.378075122833252,
++        1.0837737321853638
++      ],
++      "children": [],
++      "parent": [
++        0,
++        106
++      ],
++      "object": {
++        "path_id": 108,
++        "offset": 176888,
++        "size": 68,
++        "class": 4,
++        "scriptIndex": -1
++      }
++    }
++  ],
++  "parentBundleSHA256": "99110f8cb6061c9476addbfef64efefb397e4dce31136eae1c17169237fce199",
++  "unityGenerator": "2022.3.62f1",
++  "transformMethod": "parent TRS composition including quaternion rotations; not runtime observation"
++}
+--- a/Analysis/V3_21_0-read-scene-geometry.py
++++ b/Analysis/V3_21_0-read-scene-geometry.py
+@@ -0,0 +1,78 @@
++from pathlib import Path
++import sys,json,hashlib,math
++from pathlib import Path
++import struct,json,re,hashlib
++class Reader:
++ def __init__(self,b,p=0):self.b=b;self.p=p
++ def get(self,fmt):v=struct.unpack_from('<'+fmt,self.b,self.p);self.p+=struct.calcsize('<'+fmt);return v[0] if len(v)==1 else v
++ def cstr(self):e=self.b.index(b'\0',self.p);s=self.b[self.p:e].decode('utf8','replace');self.p=e+1;return s
++ def align(self):self.p=(self.p+3)&~3
++ def astr(self):
++  n=self.get('i');assert 0<=n<=10*1024**2;s=self.b[self.p:self.p+n].decode('utf8','replace');self.p+=n;self.align();return s
++
++def objects(path):
++ b=Path(path).read_bytes();assert struct.unpack_from('>I',b,8)[0]==22 and b[16]==0
++ meta,sz,do,unk=struct.unpack_from('>IQQQ',b,20);assert sz==len(b);r=Reader(b,48);unity=r.cstr();platform=r.get('i');tree=r.get('?')
++ types=[]
++ for i in range(r.get('i')):
++  cid=r.get('i');strip=r.get('?');script=r.get('h')
++  if cid==114:r.p+=16
++  r.p+=16
++  if tree:
++   nodes,strings=r.get('ii');assert 0<=nodes<100000 and 0<=strings<16*1024**2
++   r.p+=nodes*32+strings
++   deps=r.get('i');assert 0<=deps<100000;r.p+=deps*4
++  assert r.p<len(b)
++  types.append({'class':cid,'scriptIndex':script})
++ rows=[];count=r.get('i');assert count<1000000
++ for i in range(count):
++  r.align();pid,start,size,tid=r.get('qqIi');assert 0<=tid<len(types);start+=do;assert start+size<=len(b)
++  rows.append({'path_id':pid,'offset':start,'size':size,**types[tid]})
++ return b,rows
++
++
++assert len(sys.argv)==3, 'usage: script.py sceneFile outputJSON'
++path=Path(sys.argv[1])
++b,rows=objects(path);gameobjects={};transforms={};errors=[]
++for o in rows:
++ try:
++  r=Reader(b,o['offset'])
++  if o['class']==1:
++   n=r.get('i');assert 0<n<128
++   components=[r.get('iq') for _ in range(n)];layer=r.get('I');name=r.astr()
++   assert layer<32 and len(name)<256
++   gameobjects[o['path_id']]={'id':o['path_id'],'name':name,'layer':layer,'components':components,'object':o}
++  elif o['class']==4:
++   go=r.get('iq');rotation=r.get('ffff');position=r.get('fff');scale=r.get('fff');n=r.get('i');assert 0<=n<256
++   children=[r.get('iq') for _ in range(n)];parent=r.get('iq')
++   transforms[o['path_id']]={'id':o['path_id'],'gameObject':go,'rotation':rotation,'localPosition':position,'localScale':scale,'children':children,'parent':parent,'object':o}
++ except Exception as e:errors.append({'object':o,'error':type(e).__name__})
++def name(t):return gameobjects.get(t['gameObject'][1],{}).get('name','?')
++def ancestry(t):
++ result=[name(t)]
++ for _ in range(16):
++  p=transforms.get(t['parent'][1])
++  if not p:break
++  result.append(name(p));t=p
++ return '/'.join(reversed(result))
++def rotate(q,v):
++ x,y,z,w=q;vx,vy,vz=v
++ tx,ty,tz=2*(y*vz-z*vy),2*(z*vx-x*vz),2*(x*vy-y*vx)
++ return (vx+w*tx+y*tz-z*ty,vy+w*ty+z*tx-x*tz,vz+w*tz+x*ty-y*tx)
++def world(t):
++ v=t['localPosition'];seen=set()
++ while t['parent'][1] in transforms:
++  t=transforms[t['parent'][1]];assert t['id'] not in seen;seen.add(t['id']);assert len(seen)<32
++  v=rotate(t['rotation'],tuple(a*c for a,c in zip(v,t['localScale'])))
++  v=tuple(a+c for a,c in zip(v,t['localPosition']))
++ return v
++selected=[]
++for t in transforms.values():
++ route=ancestry(t)
++ if 'Table' in route or 'Pots' in route or name(t).startswith('pot'):
++  selected.append({'path':route,'name':name(t),'worldPosition':world(t),**t})
++report={'source':str(path),'sha256':hashlib.sha256(b).hexdigest(),'method':'bounded binary GameObject/Transform layout parser; local transforms only, not executed',
++ 'objectCount':len(rows),'gameObjectCount':len(gameobjects),'transformCount':len(transforms),'parseErrors':errors,'selected':selected}
++Path(sys.argv[2]).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
++for t in selected:print(t['path'],'pos',t['localPosition'],'scale',t['localScale'],'rot',t['rotation'],'children',len(t['children']))
++print('errors',len(errors))
 --- a/Analysis/V3_21_0-source-ledger.json
 +++ b/Analysis/V3_21_0-source-ledger.json
 @@ -0,0 +1,1485 @@
@@ -1861,7 +3917,7 @@
  -- existing Lua state's owner/main thread with exactly "sample" or "stop".
  -- Contracts: cache1084 CRes BiFrameLogic/BallBehavior/AuxiliaryLineBehavior.
  -- Never call updateAuxiliary: it changes rebound data consumed by game physics.
-@@ -408,15 +408,263 @@
+@@ -408,15 +408,289 @@
      end
  end
  
@@ -1888,7 +3944,7 @@
 +end
 +local function matchIdentity(frame)
 + local id=get(get(frame,"gameDataLogic"),"gameId")
-+ if type(id)=="number" and id>0 and id<9007199254740992 and id%1==0 then return tostring(id) end
++ if type(id)=="number" and id>0 and id<9007199254740992 and id%1==0 then return string.format("%.0f",id) end
 + if type(id)=="string" and #id>=1 and #id<=32 and id:match("^[1-9]%d*$") then return id end
 +end
 +local function controlObserve(frame,engine,sceneHandle,cameraID,white,rows,diagnostics,moving)
@@ -1958,7 +4014,7 @@
 + if shot and round~=shot.round then control.pending=nil;control.prepared=nil end
 + return true
 +end
-+local function controlAct(frame,engine,sceneHandle,cameraID,white,rows,diagnostics,physicsReason,enum,constants)
++local function controlAct(frame,engine,sceneHandle,cameraID,white,rows,diagnostics,physicsReason,enum,constants,materialMatches)
 + if not actionCommand then return nil end
 + if type(SDK321Planner)~="table" then controlStatus("uncertain","strategy_unavailable");return result end
 + if physicsReason and physicsReason~="power_below_deadzone" then
@@ -1977,6 +4033,10 @@
 + end
 + if get(get(frame,"gameDataLogic"),"gameInfoData")==nil then controlStatus("waiting","match_info_unavailable");return result end
 + if get(get(view,"settingItem"),"touchable")==true then controlStatus("waiting","settings_visible");return result end
++ if #rows~=16 then controlStatus("waiting","complete_rack_required");return result end
++ for _,row in ipairs(rows) do
++  if not row.active and not row.potted then controlStatus("waiting","table_ball_state_unresolved");return result end
++ end
 + local fingerprint={tostring(round),tostring(phase),tostring(group),tostring(diagnostics.sliderMax),tostring(diagnostics.powerReference)}
 + for _,row in ipairs(rows) do
 +  fingerprint[#fingerprint+1]=row.tag..":"..tostring(row.active)..":"..tostring(row.potted)
@@ -1993,10 +4053,10 @@
 + local trigger=get(get(engine,"QueryTriggerInteraction"),"Collide")
 + if type(cast)~="function" or trigger==nil then controlStatus("waiting","route_query_unavailable");return result end
 + local queries=0
-+ local function nearest(origin,dir,ignore)
++ local function nearest(origin,dir,ignore,includeSurface)
 +  queries=queries+1;if queries>24 then return nil end
 +  local found,hits=pcall(cast,engine.Vector3(origin.x,origin.y or 0,origin.z),white.radius,
-+   engine.Vector3(dir.x,0,dir.z),20,524289,trigger)
++   engine.Vector3(dir.x,dir.y or 0,dir.z),20,524289,trigger)
 +  local n=get(hits,"Length");if not found or not integer(n,0,96) then return nil end
 +  local first
 +  for i=0,n-1 do
@@ -2013,23 +4073,32 @@
 +    if not record then
 +     if names[name] and get(col,"isTrigger")==true then kind="pocket"
 +     elseif name=="bumpers" or tag=="bumper" then kind="cushion"
-+     elseif name=="canvas" then kind="ignore" end
++     elseif name=="canvas" then kind=includeSurface and "surface" or "ignore" end
 +    end
 +    p=get(p,"parent")
 +   end
 +   if kind~="ignore" then
 +    if not first or distance<first.distance-.00001 then
-+     first={kind=kind,tag=record and record.tag,distance=distance,normal=vector(get(hit,"normal"))}
++     first={kind=kind,tag=record and record.tag,distance=distance,normal=vector(get(hit,"normal")),material=get(col,"sharedMaterial")}
 +    elseif math.abs(distance-first.distance)<.00001 and (kind~=first.kind or (record and record.tag~=first.tag)) then return nil end
 +   end
 +  end
 +  return first
 + end
++ local function validMaterial(material,friction,restitution,staticFriction)
++  return material~=nil and get(material,"frictionCombine")~=nil and get(material,"bounceCombine")~=nil
++   and materialMatches(material,friction,restitution,staticFriction)
++ end
++ local surfaceHit=nearest(add(white.position,{x=0,y=1,z=0},.5),{x=0,y=-1,z=0},1,true)
++ if not surfaceHit or surfaceHit.kind~="surface" or surfaceHit.distance<.3 or surfaceHit.distance>.7
++  or not surfaceHit.normal or surfaceHit.normal.y<.99 or not validMaterial(surfaceHit.material,1,0) then
++  controlStatus("waiting","live_table_material_mismatch");return result
++ end
 + local prepared=control.prepared
 + if prepared then
 +  local plan=prepared.plan
-+  if time-prepared.time>4 then control.prepared=nil;controlStatus("waiting","aim_expired");return result end
 +  if command=="aim" then controlStatus("aimed","aim_only_no_shot",plan);return result end
++  if time-prepared.time>4 then control.prepared=nil;controlStatus("waiting","aim_expired");return result end
 +  local dir=unit(vector(get(frame,"curDir")))
 +  if not dir or dot(dir,plan.direction)<.999999 or math.abs(get(slider,"value")-plan.power)>.001 then
 +   controlStatus("uncertain","prepared_inputs_changed",plan);return result
@@ -2058,24 +4127,36 @@
 + local ok,pots=pcall(find,"Table/Pots");local tr=ok and get(pots,"transform") or nil
 + local count=get(tr,"childCount");local pockets={};local named={}
 + local names={potUpLeft=true,potUpRight=true,potUpCenter=true,potDownLeft=true,potDownRight=true,potDownCenter=true}
-+ if count~=6 or get(get(pots,"scene"),"handle")~=sceneHandle then controlStatus("waiting","table_geometry_unavailable");return result end
-+ for i=0,5 do
++ if not integer(count,6,16) or get(get(pots,"scene"),"handle")~=sceneHandle then controlStatus("waiting","table_geometry_unavailable");return result end
++ for i=0,count-1 do
 +  local found,p=invoke(tr,"GetChild",i);local name=get(p,"name");local pos=vector(get(p,"position"))
 +  local tag=get(p,"tag")
-+  if not found or not names[name] or named[name] or not pos or math.abs(pos.x)>10 or math.abs(pos.z)>10
++  -- The shipped binary scene has SEVEN children: six pockets plus PotsRollBalls.
++  -- Do not mistake a hierarchy child count for a count of playable pockets.
++  if found and name=="PotsRollBalls" then
++   -- Known decorative/collection child; never a shot destination.
++  elseif not found or not names[name] or named[name] or not pos or math.abs(pos.x)>10 or math.abs(pos.z)>10
 +   or type(tag)~="string" or tag:sub(1,3)~="Pot" then controlStatus("waiting","pocket_contract_mismatch");return result end
-+  named[name]=true;pockets[#pockets+1]={x=pos.x,y=0,z=pos.z,name=name}
++  if names[name] then named[name]=true;pockets[#pockets+1]={x=pos.x,y=0,z=pos.z,name=name} end
 + end
++ if #pockets~=6 then controlStatus("waiting","pocket_contract_mismatch");return result end
 + table.sort(pockets,function(a,b) return a.name<b.name end)
 + local xmin,xmax,zmin,zmax=20,-20,20,-20
 + for i,p in ipairs(pockets) do p.index=i;xmin=math.min(xmin,p.x);xmax=math.max(xmax,p.x);zmin=math.min(zmin,p.z);zmax=math.max(zmax,p.z) end
 + if xmax-xmin<6 or xmax-xmin>14 or zmax-zmin<3 or zmax-zmin>8 then controlStatus("waiting","table_extent_mismatch");return result end
++ -- Match BiAILogic's CORNER anchors. The middle pocket transforms protrude
++ -- farther than the corners in the shipped scene; extrema give wrong banks.
++ local cornerA,cornerB
++ for _,p in ipairs(pockets) do if p.name=="potUpRight" then cornerA=p elseif p.name=="potDownLeft" then cornerB=p end end
++ local bounds={xmin=cornerA.x+.07+white.radius,xmax=cornerB.x-.07-white.radius,
++  zmin=cornerB.z+.15+white.radius,zmax=cornerA.z-.15-white.radius}
++ if bounds.xmin>=bounds.xmax or bounds.zmin>=bounds.zmax then controlStatus("waiting","table_anchor_mismatch");return result end
 + local row=white.row;local inertia=get(row.inertiaTensor,"x")
 + local s={white=white.position,balls=rows,pockets=pockets,radius=white.radius,mass=row.mass,inertia=inertia,
 +  dt=diagnostics.fixedDeltaTime,drag=row.drag,angularDrag=row.angularDrag,stopSquared=diagnostics.stopSpeedSquared,
 +  mu=1,reference=diagnostics.powerReference,maximum=diagnostics.sliderMax,deadzone=diagnostics.deadzone,
 +  phase=phase,group=group,gain=control.calibrationSamples>=3 and control.gain or 1,
-+  bounds={xmin=xmin+.07+white.radius,xmax=xmax-.07-white.radius,zmin=zmin+.15+white.radius,zmax=zmax-.15-white.radius}}
++  bounds=bounds}
 + local plans,reason=SDK321Planner.plan(s)
 + if not plans then controlStatus("waiting",reason);return result end
 + -- Verify shortlisted paths using bounded READ-ONLY Unity casts. No candidate
@@ -2090,6 +4171,7 @@
 +  if valid and plan.pocket~=0 then
 +   hit=nearest(plan.objectStart,plan.objectDirection,plan.target)
 +   valid=hit and hit.kind==(plan.bank and "cushion" or "pocket")
++   if valid and plan.bank then valid=validMaterial(hit.material,.5,.8,0) end
 +   if valid and plan.bank then
 +    local n=unit(hit.normal);local expected=unit(subtract(plan.pocketWorld,plan.bank))
 +    local rebound=n and unit(subtract(plan.objectDirection,add(zero(),n,2*dot(plan.objectDirection,n))))
@@ -2126,7 +4208,7 @@
  
      local CS = rawget(_G, "CS")
      local engine = get(CS, "UnityEngine")
-@@ -755,6 +1003,9 @@
+@@ -755,6 +1029,9 @@
      end
      diagnostics.reason=physicsReason or "ready"
      diagnostics.available=physicsReason==nil
@@ -2136,17 +4218,17 @@
      if moving or angularMoving then return stop("moving", "balls_moving") end
      if not tutorial and (get(frame,"started")~=true or get(frame,"canShot")~=true) then
          return stop("not_ready", "not_aiming")
-@@ -794,6 +1045,9 @@
+@@ -794,6 +1071,9 @@
      end
      result.cue = {world=white.position, direction=direction}
      result.status="aiming"
 +    if actionCommand then
-+        return controlAct(frame,engine,sceneHandle,cameraID,white,result.balls,diagnostics,physicsReason,enum,constants)
++        return controlAct(frame,engine,sceneHandle,cameraID,white,result.balls,diagnostics,physicsReason,enum,constants,materialMatches)
 +    end
  
      local physics=get(engine,"Physics")
      local sphereCastAll=get(physics,"SphereCastAll")
-@@ -1400,7 +1654,10 @@
+@@ -1400,7 +1680,10 @@
      return result
  end
  local ok, value = pcall(sample)
@@ -2427,12 +4509,13 @@
  /// Main-thread use only. No collection runs before the user starts it.
 --- a/Sources/SDKtools/STBilliardsRuntime.m
 +++ b/Sources/SDKtools/STBilliardsRuntime.m
-@@ -234,6 +234,12 @@
+@@ -234,6 +234,13 @@
  @property(nonatomic) double startedAt;
  @property(nonatomic) double lastTick;
  @property(nonatomic) BOOL slowed;
 +@property(nonatomic) uint64_t automationFrame;
 +@property(nonatomic) BOOL automationEverEnabled;
++@property(nonatomic) BOOL automationEverAutoplay;
 +@property(nonatomic,strong) NSMutableArray<NSDictionary *> *automationHistory;
 +@property(nonatomic,copy) NSDictionary *lastAutomation;
 +@property(nonatomic,strong) UILabel *automationHUD;
@@ -2440,7 +4523,7 @@
  @property(nonatomic,copy) NSString *stopReason;
  - (void)closeShotObservationWithReason:(NSString *)reason;
  - (void)updateShotObservationWithRecord:(NSDictionary *)record;
-@@ -243,6 +249,7 @@
+@@ -243,6 +250,7 @@
  + (instancetype)shared { static STBilliardsRuntime *instance; static dispatch_once_t once; dispatch_once(&once,^{instance=[self new];}); return instance; }
  - (instancetype)init {
      if ((self=[super init])) {
@@ -2448,7 +4531,7 @@
          _statusText=@"Desativado"; _lastSnapshot=@{}; _history=[NSMutableArray array]; _stopReason=@"not_started";
          [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(background:) name:UIApplicationWillResignActiveNotification object:nil];
          [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(background:) name:UIApplicationDidEnterBackgroundNotification object:nil];
-@@ -254,6 +261,75 @@
+@@ -254,6 +262,78 @@
      self.statusText=text;
      [[NSNotificationCenter defaultCenter] postNotificationName:STBilliardsRuntimeDidChangeNotification object:self];
  }
@@ -2460,6 +4543,7 @@
 +    }
 +    _automationMode=mode; self.automationFrame=0;
 +    self.automationEverEnabled|=mode!=0;
++    self.automationEverAutoplay|=mode==2;
 +    [STBilliardsLuaBridge executeCommand:@"stop" error:nil];
 +    self.automationHUD.hidden=mode==0;
 +    [self publishStatus:mode==2?@"Auto · somente a partida atual":(mode==1?@"Aim · ajusta sem disparar":@"Automação pausada")];
@@ -2482,7 +4566,9 @@
 +    if (self.automationFrame==(uint64_t)frame) return;
 +    self.automationFrame=(uint64_t)frame;
 +    NSError *error=nil;
++    double controlStarted=CACurrentMediaTime();
 +    NSDictionary *raw=[STBilliardsLuaBridge executeCommand:self.automationMode==2?@"autoplay":@"aim" error:&error];
++    double durationMs=MAX(0,(CACurrentMediaTime()-controlStarted)*1000);
 +    NSDictionary *a=[raw[@"automation"] isKindOfClass:NSDictionary.class]?raw[@"automation"]:nil;
 +    if (error || !a || ![a[@"schemaVersion"] isEqual:@1]) { [self pauseAutomationWithReason:@"control_unavailable"]; return; }
 +    NSString *phase=a[@"phase"], *reason=a[@"reason"];
@@ -2492,7 +4578,7 @@
 +        ![reason isKindOfClass:NSString.class] || reason.length<1 || reason.length>80 ||
 +        [reason rangeOfCharacterFromSet:invalid].location!=NSNotFound) { [self pauseAutomationWithReason:@"invalid_control"]; return; }
 +    NSMutableDictionary *safe=[@{@"schemaVersion":@1,@"phase":phase,@"reason":reason,@"mode":@(self.automationMode),
-+        @"elapsedSeconds":@(MAX(0,CACurrentMediaTime()-self.startedAt))} mutableCopy];
++        @"elapsedSeconds":@(MAX(0,CACurrentMediaTime()-self.startedAt)),@"durationMs":@(durationMs)} mutableCopy];
 +    for (NSString *key in @[@"shots",@"calibrationSamples",@"gain",@"target",@"number",@"pocket",@"angle",@"power",@"score",@"evaluated"]) {
 +        id value=a[key]; if (!value) continue;
 +        double n=0;
@@ -2524,7 +4610,7 @@
  - (void)background:(NSNotification *)notification {
      (void)notification;
      if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{[self stopWithReason:@"background"];}); return; }
-@@ -273,6 +349,14 @@
+@@ -273,6 +353,14 @@
      self.overlayWindow=window; self.hostWindow=nil; self.hostView=nil;
      self.drawing=[[STBilliardsOverlayView alloc] initWithFrame:window.rootViewController.view.bounds];
      [window.rootViewController.view insertSubview:self.drawing atIndex:0];
@@ -2534,12 +4620,12 @@
 +    self.automationHUD.numberOfLines=2;self.automationHUD.userInteractionEnabled=NO;self.automationHUD.hidden=YES;
 +    self.automationHUD.autoresizingMask=UIViewAutoresizingFlexibleRightMargin|UIViewAutoresizingFlexibleBottomMargin;
 +    [window.rootViewController.view insertSubview:self.automationHUD aboveSubview:self.drawing];
-+    _automationMode=0;self.automationEverEnabled=NO;self.automationFrame=0;
++    _automationMode=0;self.automationEverEnabled=NO;self.automationEverAutoplay=NO;self.automationFrame=0;
 +    self.lastAutomation=@{};[self.automationHistory removeAllObjects];
      self.enabled=YES; self.slowed=NO; self.startedAt=CACurrentMediaTime(); self.lastTick=0;
      self.attempts=0; self.accepted=0; self.rejected=0; self.slowSamples=0; self.omitted=0;
      self.lastSnapshot=@{}; self.latestAimReference=nil; self.lastAimBeforeMotion=nil; self.lastShotObservation=nil;
-@@ -304,6 +388,7 @@
+@@ -304,6 +392,7 @@
  - (void)stopWithReason:(NSString *)reason {
      if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{[self stopWithReason:reason];}); return; }
      BOOL wasEnabled=self.enabled;
@@ -2547,7 +4633,7 @@
      self.enabled=NO; [self.sampleTimer invalidate]; self.sampleTimer=nil;
      [self.expiryDisplayLink invalidate]; self.expiryDisplayLink=nil;
      [self.drawing clear]; [self.drawing removeFromSuperview]; self.drawing=nil;
-@@ -472,6 +557,7 @@
+@@ -472,6 +561,7 @@
      NSDictionary *snapshot=STBilliardsSanitizeSnapshot(raw,&failure);
      if (!snapshot) { [self invalidate:@"error" reason:failure]; [self publishStatus:@"Dados incompletos; guia ocultada. Exporte o diagnóstico."]; return; }
      self.lastSnapshot=snapshot;
@@ -2555,7 +4641,7 @@
      NSString *status=snapshot[@"status"];
      if (![@[@"aiming",@"moving"] containsObject:status]) {
          [self.drawing clear]; _frameGate=(STBLFrameGate){0};
-@@ -524,16 +610,17 @@
+@@ -524,16 +614,17 @@
      self.drawing.snapshot=snapshot; self.drawing.gameRect=rect; self.drawing.acceptedBounds=self.drawing.bounds;
      self.drawing.expiresAt=_frameGate.advancedAt+STBL_STALE_SECONDS;
      [self.drawing setNeedsDisplay];
@@ -2575,12 +4661,12 @@
          @"samples":[self.history copy],@"counts":@{@"attempts":@(self.attempts),@"accepted":@(self.accepted),@"rejected":@(self.rejected),
              @"slowSamples":@(self.slowSamples),@"omittedOlderSamples":@(self.omitted)},@"stopReason":self.stopReason,
          @"limits":@{@"historySamples":@(STBLHistoryLimit),@"staleSeconds":@(STBL_STALE_SECONDS),@"maximumHz":@10,@"slowModeHz":@4,
-@@ -546,7 +633,7 @@
+@@ -546,7 +637,7 @@
              @"moduleLoadingCalls":@NO,@"globalNamespaceWrites":@NO,
              @"loadedBilliardsSceneRequired":@YES,@"existingManagerGetter":@YES,
              @"managerGetterImplementation":@"not_recovered"},
 -        @"policy":@{@"gameplayWrites":@NO,@"automaticShots":@NO,@"changesOriginalGuide":@NO,@"predictionModel":@"finite_with_direction_fallback",
-+        @"policy":@{@"gameplayWrites":@(self.automationEverEnabled),@"automaticShots":@([self.lastAutomation[@"shots"] unsignedIntegerValue]>0),@"changesOriginalGuide":@(self.automationEverEnabled),@"automaticRematch":@NO,@"predictionModel":@"finite_with_direction_fallback",
++        @"policy":@{@"gameplayWrites":@(self.automationEverEnabled),@"automaticShots":@(self.automationEverAutoplay),@"automaticShotsMeaning":@"explicit_permission_not_verified_outcome",@"changesOriginalGuide":@(self.automationEverEnabled),@"automaticRematch":@NO,@"predictionModel":@"finite_with_direction_fallback",
              @"chainEventBudget":@64,@"chainSegmentBudget":@48,@"environmentQueryBudget":@96,
              @"maximumBouncesPerBall":@6,@"maximumSimulationSeconds":@15,@"maximumPhysicsSteps":@750,
              @"physicsStepSeconds":@0.02,@"environmentLayerMask":@524289,
@@ -2710,10 +4796,25 @@
      Check(![report[@"currentMatchIdentified"] boolValue]&&![report[@"billiardsPredictionAvailable"] boolValue],@"cached files never identify current match or prediction");
  
      NSString *name=@"billiard_cres_0123456789abcdef0123456789abcdef";
+--- a/Tests/fixtures/billiards-scene-cache1084.lua
++++ b/Tests/fixtures/billiards-scene-cache1084.lua
+@@ -0,0 +1,12 @@
++-- Numeric fixture derived from shipped cache1084 scene, not game code.
++return {
++ sourceSHA256="de641a5b11a8130a0a8fab4d110bf0019f7187394c97bb3ff861c2fe2f7e872e",
++ parentBundleSHA256="99110f8cb6061c9476addbfef64efefb397e4dce31136eae1c17169237fce199",
++ childCount=7,pockets={
++  {name="potDownCenter",x=0.0008309501816867737,y=-0.15399190684621455,z=-2.9694644893244506},
++  {name="potDownLeft",x=5.540969948593329,y=-0.15399192297653652,z=-2.8494104440431647},
++  {name="potDownRight",x=-5.5506502726686335,y=-0.15399192542051887,z=-2.8312204835656227},
++  {name="potUpCenter",x=0.009069914666376633,y=-0.15399270029400913,z=2.9359735409573906},
++  {name="potUpLeft",x=5.539365319951742,y=-0.15399268472437377,z=2.8200925511364865},
++  {name="potUpRight",x=-5.5506502726686335,y=-0.1539926862195098,z=2.8312204864408996},
++ }}
 --- a/Tests/test_billiards_strategy.lua
 +++ b/Tests/test_billiards_strategy.lua
-@@ -0,0 +1,194 @@
-+local strategyPath,probePath,fixturePath=...
+@@ -0,0 +1,214 @@
++local strategyPath,probePath,fixturePath,geometryPath=...
 +assert(_VERSION=="Lua 5.3")
 +local function read(p) local f=assert(io.open(p,"rb"));local s=f:read("*a");f:close();return s end
 +local source=read(strategyPath)
@@ -2767,11 +4868,14 @@
 +local prefix=assert(fixture:match("^(.-)local function clone"))
 +local test=[=[
 +local strategyPath=...
++local geometry=assert(loadfile(select(5,...)))()
 +local function read(p) local f=assert(io.open(p,"rb"));local s=f:read("*a");f:close();return s end
 +probe=assert(load("local SDK321Planner=(function()\n"..read(strategyPath).."\nend)()\n"..read(probePath),"@combined","t",_G))
 +local checks,shots,aims=0,0,0
 +local function check(v,m) assert(v,m);checks=checks+1 end
 +white.transform.position=v(0,0,0);target.transform.position=v(0,0,1)
++-- Real frame keeps all sixteen identities, including potted/inactive balls.
++for tag=3,16 do local b=ball(tag,0);b.ballActive=false;b.poted=true;frame.balls[tag]=b end
 +frame.roundId=1;frame.selfColor=1;frame.frameStateLogic.frameState=7;frame.frameStateLogic.turnData.turnCount=1
 +frame.gameDataLogic={gameInfoData={},gameId="1234"};frame.gameView.frameLogic=frame;frame.gameView.powerSld.touchable=true
 +frame.updateCueDir=function(self,angle)
@@ -2784,15 +4888,16 @@
 + shots=shots+1;frame.ballsInMovement=true;frame.canShot=false;white.rigidbody.velocity=v(0,0,4)
 +end
 +local pots,colliders={},{}
-+local places={{"potDownLeft",-5.735,-2.815},{"potDownCenter",0,-2.815},{"potDownRight",5.735,-2.815},
-+ {"potUpLeft",-5.735,2.815},{"potUpCenter",0,2.815},{"potUpRight",5.735,2.815}}
++local places={}
++for _,p in ipairs(geometry.pockets) do places[#places+1]={p.name,p.x,p.z} end
 +for i,a in ipairs(places) do
 + local c=environmentCollider(700+i,a[1],"Pot"..i,true)
 + c.transform.name=a[1];c.transform.tag="Pot"..i;c.transform.position=v(a[2],0,a[3]);pots[i]=c.transform;colliders[i]=c
 +end
++pots[7]={name="PotsRollBalls",tag="Untagged",position=v(0,-2,0)}
 +CS.UnityEngine.GameObject={Find=function(name)
 + check(name=="Table/Pots","fixed read-only geometry lookup")
-+ return {scene=currentScene,transform={childCount=6,GetChild=function(_,i) return pots[i+1] end}}
++ return {scene=currentScene,transform={childCount=geometry.childCount,GetChild=function(_,i) return pots[i+1] end}}
 +end}
 +local function circle(origin,dir,cx,cz,r)
 + local dx,dz=origin.x-cx,origin.z-cz;local b=dx*dir.x+dz*dir.z
@@ -2802,6 +4907,7 @@
 +end
 +CS.UnityEngine.Physics.SphereCastAll=function(origin,radius,dir,distance,mask,trigger)
 + check(distance==20 and mask==524289 and trigger==2,"live query contract")
++ if dir.y==-1 then return hits({hit(surface,.5,v(0,1,0))}) end
 + local out={}
 + for _,b in ipairs(frame.balls) do
 +  if b.ballActive and not b.poted then
@@ -2809,12 +4915,13 @@
 +   if d then out[#out+1]=hit(b.collider,d) end
 +  end
 + end
-+ for i,p in ipairs(pots) do
++ for i,p in ipairs(pots) do if i<=6 then
 +  local d=circle(origin,dir,p.position.x,p.position.z,.4)
 +  if d then out[#out+1]=hit(colliders[i],d) end
-+ end
++ end end
 + return hits(out)
 +end
++surface.sharedMaterial={dynamicFriction=1,staticFriction=1,bounciness=0,frictionCombine=3,bounceCombine=1}
 +local function tick(command,dt)
 + CS.UnityEngine.Time.time=CS.UnityEngine.Time.time+(dt or .2);CS.UnityEngine.Time.frameCount=CS.UnityEngine.Time.frameCount+12
 + return probe(command)
@@ -2822,8 +4929,14 @@
 +local function is(s,phase) return s:find('"phase":"'..phase..'"',1,true)~=nil end
 +tick("aim");local a=tick("aim")
 +check(is(a,"aimed"),"aim reaches original input controls: "..a)
++local bounds=__SDKtoolsBilliards315.control321.prepared.physics.bounds
++check(math.abs(bounds.zmax-2.5162204864408996)<.000001,"rail uses corner, not protruding middle pocket")
++check(math.abs(bounds.zmin+2.5344104440431647)<.000001,"opposite rail uses original AI corner inset")
 +for _=1,8 do tick("aim") end
 +check(shots==0 and aims==1,"aim-only never releases, no repeated input churn")
++frame.balls[3].poted=false;a=tick("aim")
++check(a:find('table_ball_state_unresolved',1,true) and shots==0,"inactive unpotted ball cannot count as cleared")
++frame.balls[3].poted=true
 +tick("stop");tick("autoplay");a=tick("autoplay")
 +check(is(a,"aimed"),"auto prepares")
 +a=tick("autoplay",.4);check(is(a,"submitted") and shots==1,"single original release")
@@ -2891,11 +5004,19 @@
 +check(__SDKtoolsBilliards315.control321.calibrationSamples==3,"three qualified real-flight samples update calibration")
 +check(math.abs(__SDKtoolsBilliards315.control321.gain-1)<.001,"perfect measured flight keeps unit gain")
 +check(shots==5,"three rounds, exactly three releases")
++tick("stop");frame.gameDataLogic.gameId="1239";frame.roundId=1;frame.frameStateLogic.turnData.turnCount=1
++frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0);white.transform.position=v(0,0,0)
++surface.sharedMaterial.dynamicFriction=.5;tick("autoplay");a=tick("autoplay")
++check(a:find('live_table_material_mismatch',1,true) and shots==5,"unexpected live floor friction blocks auto")
++surface.sharedMaterial.dynamicFriction=1
 +-- Changing the live route after aim must not release a cached solution.
 +tick("stop");frame.gameDataLogic.gameId="1238";frame.roundId=1;frame.frameStateLogic.turnData.turnCount=1
 +frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0);white.transform.position=v(0,0,0)
 +tick("autoplay");tick("autoplay")
-+CS.UnityEngine.Physics.SphereCastAll=function() return hits({hit(unknown,.1)}) end
++CS.UnityEngine.Physics.SphereCastAll=function(origin,radius,dir)
++ if dir.y==-1 then return hits({hit(surface,.5,v(0,1,0))}) end
++ return hits({hit(unknown,.1)})
++end
 +a=tick("autoplay",.4)
 +check(is(a,"uncertain") and shots==5,"fresh route validation rejects new obstruction")
 +return checks
@@ -2904,7 +5025,7 @@
 +local combined=prefix.."\n"..test
 +-- test vararg is strategyPath, while prefix's second arg must remain probePath.
 +combined=combined:gsub("local strategyPath=%.%.%.","local strategyPath=select(4,...)",1)
-+local n=assert(load(combined,"@automation_mocks","t",_G))("automation321",probePath,"",strategyPath)
++local n=assert(load(combined,"@automation_mocks","t",_G))("automation321",probePath,"",strategyPath,geometryPath)
 +checks=checks+n
 +return '{"passed":'..checks..',"engine":"Lua 5.3","deviceTested":false}'
 --- a/Tests/test_packaging.py
@@ -2928,7 +5049,7 @@
          self.assertGreater(len(production['billiards_probe.lua']),65536)
          for nested in (False,True):
              with self.subTest(nested=nested), tempfile.TemporaryDirectory() as t:
-@@ -253,7 +254,7 @@
+@@ -253,11 +254,11 @@
              plist=framework/'Info.plist';info=plistlib.loads(plist.read_bytes())
              info['CFBundleShortVersionString']='3.19.4';info['CFBundleVersion']='40'
              plist.write_bytes(plistlib.dumps(info))
@@ -2937,9 +5058,29 @@
              self.assertFalse((root/'new.ipa').exists())
  
      def test_required_tool_resource_missing_rejected_without_output(self):
+-        for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'autoplay_extended.js', 'autoplay_powers.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua'):
++        for resource in ('scene_probe.js', 'return_tool.js', 'autoplay_tool.js', 'autoplay_planner.js', 'autoplay_extended.js', 'autoplay_powers.js', 'xray_overlay.js', 'warehouse_tool.js', 'warehouse_test.js', 'card_hints.js', 'card_probe.js', 'card_flow.js', 'card_root.js', 'card_early.js', 'billiards_probe.lua', 'billiards_strategy.lua'):
+             with self.subTest(resource=resource), tempfile.TemporaryDirectory() as t:
+                 root=Path(t);ipa,framework,identity=make_fixture(root)
+                 (framework/resource).unlink()
+@@ -265,6 +266,14 @@
+                     integrate(ipa,framework,identity,root/'new.ipa')
+                 self.assertFalse((root/'new.ipa').exists())
+ 
++    def test_strategy_lua_size_limit_and_utf8_are_enforced(self):
++        for data in (b'', b'x'*32769, b'\xff'):
++            with self.subTest(size=len(data)), tempfile.TemporaryDirectory() as t:
++                root=Path(t);ipa,framework,identity=make_fixture(root)
++                (framework/'billiards_strategy.lua').write_bytes(data)
++                with self.assertRaises(IntegrationError): integrate(ipa,framework,identity,root/'new.ipa')
++                self.assertFalse((root/'new.ipa').exists())
++
+     def test_oversized_tool_resource_rejected_without_output(self):
+         with tempfile.TemporaryDirectory() as t:
+             root=Path(t);ipa,framework,identity=make_fixture(root)
 --- a/Validation/V3_21_0-validation.json
 +++ b/Validation/V3_21_0-validation.json
-@@ -0,0 +1,424 @@
+@@ -0,0 +1,427 @@
 +{
 +  "schema": "SDKtools.Validation.v3.21.0",
 +  "toolVersion": "3.21.0",
@@ -2954,11 +5095,11 @@
 +  "scope": "Explicit opt-in Aim-only and current-match Autoplay; live pocket geometry, direct/one-object-bank routes, original impulse, reduced slip/roll force solver, bounded launch calibration and original release exactly once. No rematch, queue, inventory or physics mutation.",
 +  "localValidation": {
 +    "javascriptPassed": 688,
-+    "pythonRun": 94,
-+    "pythonPassed": 90,
++    "pythonRun": 95,
++    "pythonPassed": 91,
 +    "pythonSkipped": 4,
 +    "observerLua53Passed": 68,
-+    "strategyLua53Checks": 82,
++    "strategyLua53Checks": 111,
 +    "failures": 0
 +  },
 +  "limits": {
@@ -3096,7 +5237,9 @@
 +    "Analysis/V3_20_0-README-preservado.md": "5d735c82a961addbfa18b5cc26d221b884689f0719967c9b4841930b26e18e22",
 +    "Analysis/V3_20_0-alpaca-turbo.md": "4cbe077a87a369e539aa3a7016ef9a6e196cb39b82c11ade60776bf812cb1c05",
 +    "Analysis/V3_21_0-REA-summary.json": "d53555cc0cf1a780748daeaf93ee4fa0523083622ff4b8ca201e979f0dede7be",
-+    "Analysis/V3_21_0-billiards-strategy.md": "fba8d74baed2858892e217eb018af556b965430b0adf4cfcdfa404ea908e010d",
++    "Analysis/V3_21_0-billiards-strategy.md": "9922873485df68e0ec5e96ecc035eb22e6d747fe1c992b1fc85cf9f0ec3f96dc",
++    "Analysis/V3_21_0-binary-scene-geometry.json": "992624f6d7f48575ecf5def0bdeb8a7577e4bf4ffd0181a8cbb51add869ae5b2",
++    "Analysis/V3_21_0-read-scene-geometry.py": "01e13383f6f6ffac25508e089ab3d34f19972d252f8597cbd9b1fb4973f2c8db",
 +    "Analysis/V3_21_0-source-ledger.json": "f541ee7fd8b731648ab0fea55d2a30d4c26edf086c8a11bf63a0c8604f634591",
 +    "Analysis/V3_3-autoplay.json": "bcd23e1fe8d4d41a35f5619d0b84204d0ad8c6d59412b31b033ad195ada23d02",
 +    "Analysis/V3_3-capture.json": "16f0e09165351e100e56d215bb6a0a71d35bce1a0fd8d042a22e82bacb0b2b15",
@@ -3132,7 +5275,7 @@
 +    "Resources/autoplay_planner.js": "77c88457ad9efe6373ce550482b95c1a896c61651291abba52d4325ecc1e8e51",
 +    "Resources/autoplay_powers.js": "e16ef77e23e1f8f3298002a407c942797b7d23ef0ed626851f38732e4f5c180a",
 +    "Resources/autoplay_tool.js": "84679619e46e074f1d18b8c1de946ab170d5cd3a4a6659c040d48f9c40591e18",
-+    "Resources/billiards_probe.lua": "7aec919d15cf9fa7a10a35cda353722e285ebef1d38ba1994c3423650e02c5fc",
++    "Resources/billiards_probe.lua": "766ca7fa5c652b201ebfabd73c029f34ef92770fb1a14d994edb57cd2dae1017",
 +    "Resources/billiards_strategy.lua": "381935605c60d907c82ef3c6863cdf00127f5b00e6a77d74fbfe1d7d4510f0c7",
 +    "Resources/card_early.js": "19efa975e9f0e3805bea877af51d1f20b39868c26c335d4a08faf7927e89b9ed",
 +    "Resources/card_flow.js": "3f24a6994961bd75ef940b8e36ec64d41dcfff0a028c71e01b9c5b4fcd7aa973",
@@ -3164,7 +5307,7 @@
 +    "Sources/SDKtools/STBilliardsResourceExporter.m": "939f4420d769419d2f1e00f667e7b1d956a8e6bccb73b24a7784a4774bba2f52",
 +    "Sources/SDKtools/STBilliardsResourceIO.h": "26757fc4ccdb39383ab11d25abeab3c59b645b0c3195278c8330487ad8db5e6c",
 +    "Sources/SDKtools/STBilliardsRuntime.h": "280f39a709b47c39e13eb3ee0f975cd1998fe4508b5af46226334d28eb60a7e7",
-+    "Sources/SDKtools/STBilliardsRuntime.m": "297592124888cea8ad9eaeada305bdc4147e48172cdb7f3e1125de2be73ca35f",
++    "Sources/SDKtools/STBilliardsRuntime.m": "92ba7a2bbf525fbc882ade87702a1a2d6d67daecc50d2d8796e8cdf0288664c1",
 +    "Sources/SDKtools/STCardColorFeed.h": "889d6e9034a2bbe658c5619542953a5fc7be990516620424f3028e9c86fcc0ca",
 +    "Sources/SDKtools/STCardColorFeed.m": "e7f48ae6ec3e5d2b0233689b1d8917d0a6a95b336c7ac0a9ef9d3c2f7b8f8b68",
 +    "Sources/SDKtools/STCardEarlyCapture.h": "dcbf24e2c4c4dab6f0e086fa0dc5378450dc7fab240e42864c3237286b86e4ee",
@@ -3250,6 +5393,7 @@
 +    "Tests/fixtures/autoplay-global-counterexample-v31.json": "b4a027e615dc7d53a0911a5f54435ddc071c08605e759a5815adf1cfa30d32dc",
 +    "Tests/fixtures/billiard_manifest_baseline_v1047.svga": "dd5e85ab92eb8ce2b6b75464ac9d58e3939335a93163e3f1856d99cc2c69fdbf",
 +    "Tests/fixtures/billiards-chain-v317-captured.json": "ae510b7e9136b976421ad6ecf526d5957fc17948489ecd8c92f7e079767e1862",
++    "Tests/fixtures/billiards-scene-cache1084.lua": "ef5e53fac838c695f82aa372b90b0c281ec60d85a29327a92bb08f7af3587733",
 +    "Tests/fixtures/billiards-v3191-profile-capture.json": "566f227b128d536958a964b9fb659ce86ff79bbe7dcfc6b7fdf434bd24b618c4",
 +    "Tests/fixtures/schema2_scene_reference.json": "1d10b4a8a39a02ec45e1c61e70b1a57fcf310e7e8dd60df7005ce07acc6ba7d3",
 +    "Tests/fixtures/warehouse-row-observed-v26.json": "f6c62a4cc92d3a4f4ed8c099141b6fba75d6d57fc94fb97942d61f292c7f7adf",
@@ -3263,13 +5407,13 @@
 +    "Tests/scene_probe.test.cjs": "90bd393c9526a1b2db2f189295cf6a606e9713ff916f3975b47ef2c544405742",
 +    "Tests/test_billiards_probe.lua": "381c0e4dfa803eeca40a7d938b8e5b87269476251c3b9308b2fac1c3bda3d3ab",
 +    "Tests/test_billiards_resource_io.c": "de77093ce1109160478c4624082b3d581a4c8db0694614df57fd67dccfb3036d",
-+    "Tests/test_billiards_strategy.lua": "25772f20db6fc616605f59629dc2ca873e2688d20522970df6c910ddafd70b18",
++    "Tests/test_billiards_strategy.lua": "30366524e3a6e6477933157d3659d1027977de0fb883b321870e4fe5fd1a9e78",
 +    "Tests/test_capture_codec.py": "2920f1e5362a6d4a11a4136d9a81c918dc99e35787b91ae8d5133fd55106e8d7",
 +    "Tests/test_card_activation_policy.py": "d3f6d924a0c9ef72b61d23fa185924ab09b204f2df970d14484411c3d07ead56",
 +    "Tests/test_card_disabled_build.py": "427b4a134762c4bb0f6651d64541cfdc435ea58bfd8296bd5c9339206d599d87",
 +    "Tests/test_card_early_analysis.py": "e1bfa9def363effe4d8e1ec17b274f263836a7a7d3490bfa74c9cfc2a4388fcc",
 +    "Tests/test_objc_property_names.py": "6a2e1206b514b59ca68886c33bfb6688a10923a389c19cf98dc5bab7968ac03c",
-+    "Tests/test_packaging.py": "5ecd9253af83906c649bb6bb24d545eb3a5d69bcbbf30e62b84eaf8cb1b8c007",
++    "Tests/test_packaging.py": "a405b4cb1f61e93cd8485b54494d63e360e42e2556da0d8ecb578b0c25cf8492",
 +    "Tests/warehouse_test.test.cjs": "0e0ea80d5de14d2827318b035f7792bcfcb4bde335f67ae1e8390f2e1466386c",
 +    "Tests/warehouse_tool.test.cjs": "e468c790ac8e55364a4f945b24442f9be96c78f0be9ca9bcf13c90fc6788b96d",
 +    "Tests/web_probe_sanitizer_test.m": "195994e6ca30c04f020683e75e1e5e92071ff56f0161754c6abc2ddb36b71662",
@@ -3349,7 +5493,7 @@
 +    "scripts/test_billiards_probe.py": "c8d4fa955c4fb7b9af9a75a0225ffd04a1ebbb93f71bda9139a31fe6060861c3",
 +    "scripts/test_billiards_resource_foundation.sh": "b8b469a9e381c99aab25e851e6ef333c2fc15b3091244f0bb76b4938edb229e9",
 +    "scripts/test_billiards_resource_io.sh": "278d265d8b366399bcb353a8fd1f26abe7183bc0307a482175ee0b516752a896",
-+    "scripts/test_billiards_strategy.py": "f8a34fc747e133bbda8d6abb8034c259daabae6ff720a7c26567d6d6c3a6628d",
++    "scripts/test_billiards_strategy.py": "899518b8f9a068dfaaca8651fa728128ebe581d734c46c1d9b40f51bfe47f2e7",
 +    "scripts/test_card_disabled.sh": "139e94daf6ae4c7450aec088df10949d42d988afbaaabf4da2cce245f0b12247",
 +    "scripts/test_card_early.sh": "ab3756929a4aa152b72cb867a43609ae50b397143c5dbd1b464e157ebfe51b22",
 +    "scripts/test_card_flow.sh": "5553fb341de3ff343c3163ff47931cb5a967fc87a0d8dd054c9d070dcb8d9fdd",
@@ -3447,6 +5591,6 @@
 +    finally:LUA.lua_close(state)
 +
 +if __name__=='__main__':
-+    result=json.loads(execute(FIXTURE.read_text(encoding='utf-8'),str(STRATEGY),str(PROBE),str(ROOT/'Tests/test_billiards_probe.lua')))
++    result=json.loads(execute(FIXTURE.read_text(encoding='utf-8'),str(STRATEGY),str(PROBE),str(ROOT/'Tests/test_billiards_probe.lua'),str(ROOT/'Tests/fixtures/billiards-scene-cache1084.lua')))
 +    assert result['passed']>=30,result
 +    print(json.dumps(result,indent=2))
