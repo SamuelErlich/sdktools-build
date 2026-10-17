@@ -1,39 +1,38 @@
-# SDKtools 3.19.9 / build 45 — Teste experimental da trava do armazém
+# SDKtools 3.20.0 / build 46 — Alpaca Turbo
 
-Base: 3.19.8 (prioridade de missão preservada). WePlay US 6.6.2/build132. Cartas e Bilhar preservados. **Esta versão testa uma hipótese; não oferece desbloqueio permanente nem uso ilimitado.**
+Base: 3.19.9. WePlay US 6.6.2/build132. Missões continuam prioritárias; Bilhar e Cartas preservados. O experimento de trava do armazém foi retirado do menu desta versão. O usuário relatou código500 no teste anterior; não é tratado como desbloqueio nem como identificação conclusiva da causa.
 
-## Usar no iPhone
+## Usar
 
-1. Assine/instale o IPA. Entre no Crazy Alpaca **em time**, antes de iniciar o autoplay. Espere qualquer jogada pendente terminar.
-2. Deixe seu próprio slot **vazio e bloqueado**. No menu Alpaca, toque **Testar trava (1 tentativa)**.
-3. O SDK escreve zero temporariamente no campo local de trava, executa a abertura original e restaura a trava antes de devolver o controle. Se o seletor abriu, **escolha UMA carta**. Essa escolha pode colocar uma carta real no armazém e alterar sua partida.
-4. Reabra o menu e toque **Ver resultado do teste**. Repita apenas essa consulta se a resposta/movimentação ainda não chegou; ela não reenvia o pedido.
-5. Exporte o relatório normal do SDKtools e envie o JSON. O resultado fica em `warehouseLockTest.diagnostic` e nos últimos16registros de `warehouseLockTest.events`.
+No menu **Crazy Alpaca**, há três controles independentes, inicialmente desligados:
 
-O botão **Meu armazém** normal continua exigindo slot livre/destravado. O botão experimental é separado. O autoplay é pausado e não é retomado automaticamente. Encerre o teste pelo botão próprio; no resultado incerto de um pedido enviado, não há liberação para nova tentativa automática. Para outro teste independente, reinicie o aplicativo.
+1. **Turbo**: agenda leituras a cada40ms em vez de100ms. Exige duas observações estáveis separadas por pelo menos40ms em vez de80ms. Não acelera o relógio do jogo, não corta suas animações e não envia jogadas em lote.
+2. **Planejamento maior**: compara caminhos com vários trios, até18 seleções hipotéticas. Busca em feixe de24 estados, máximo12000 expansões/24 fatias de6ms. Mantém uma rota segura do planejador anterior como fallback. Executa apenas o primeiro trio provado e replaneja a partir da mesa real.
+3. **Habilitar uso de poderes**: autoriza **consumir seu estoque existente** de Reserva/Storage, Desfazer/Withdraw e Embaralhar/Refresh, somente como resgate quando não há rota segura encontrada e a bandeja tem pelo menos4 cartas. Não compra, cria ou recarrega poderes.
 
-## Como interpretar
+Ative as opções desejadas e toque **Iniciar autoplay**. Nenhuma opção inicia o jogo sozinha. As permissões não ficam ligadas após reiniciar o aplicativo. Toque manual na partida, captura e segundo plano continuam pausando o autoplay.
 
-- `armed`: seletor original aberto; o teste ainda não observou pedido de colocação.
-- `submitted`: foi observado o envelope original de uma escolha manual, sem alterar bytes/argumentos.
-- `accepted`, `serverCode=200`: resposta de protocolo correspondente ao pedido observado. **Não prova por si só mudança do slot.**
-- `slotEffectConfirmed=true`: além do200, a mesma carta apareceu no próprio slot, observada coerentemente no Store/componente. **Ainda não prova desbloqueio após retirar essa carta nem uso ilimitado.**
-- `rejected`: o servidor devolveu um código diferente de200. Isso não identifica sozinho a causa da recusa.
-- `uncertain`: envio/retorno/restauração não comprovados. Não repetir o pedido; confira ou reabra a partida.
-- `expired`: expirou a seleção sem pedido observado.
+## Como os poderes são escolhidos
 
-O lease de seleção é30s; após pedido observado,15s para resposta. Não há envio automático, pacote fabricado, chamada de debug, alteração de saldo/poderes, repetição do pedido ou mudança no slot de outro jogador. O usuário ainda pode fazer ações normais no jogo; elas não são automaticamente atribuídas ao teste.
+- Primeiro tenta resolver com cartas, mantendo prioridade da missão.
+- **Reserva**: somente com reserva vazia e previsão de trio acessível após liberar3 espaços. Como o servidor escolhe as cartas, verifica todas as possíveis combinações de3 cartas da bandeja, não presume quais serão movidas.
+- **Desfazer**: exige a última carta identificada na bandeja, origem conhecida e um trio acessível após a volta. Considera a cobertura que essa carta pode criar ao voltar para a pilha.
+- **Embaralhar**: último recurso. O resultado é desconhecido antes do uso; não promete uma combinação vencedora.
+- Poderes direcionados (Penetrate/Bomb), tipos desconhecidos e estoque zero não são automatizados nesta versão. Continuam disponíveis pelos controles manuais já existentes quando compatíveis.
+- No máximo um poder confirmado entre jogadas normais confirmadas: não gasta o inventário em uma sequência de tentativas de resgate sem progresso.
 
-## O que é escrito e restaurado
+Abre a janela original e confirma em outra leitura, validando novamente identidade/tipo/estoque/contexto. Exige diminuição exata de1 no estoque e efeito correspondente, estável, na mesa. Uma solicitação não é contabilizada como carta jogada nem como efeito confirmado.
 
-Somente o descritor de dados de `commonBlock.lock_state` do próprio slot vazio é sobrescrito durante a chamada de abertura. Não são zeradas travas de cartas especiais. A restauração atua no objeto original, sem substituir um objeto novo recebido. Falhas de restauração são reportadas como incertas, nunca como sucesso.
+## Se parar aguardando um poder
 
-Os observadores são temporários na instância de Socket, não no protótipo global. A escolha e o send originais preservam this/argumentos/retorno/exceções/Promise. A inspeção lê somente o cabeçalho da resposta correlacionada; corpos, UID/rid, segredo, IDs de carta e de pacote não são exportados. Eventos sintéticos de página não são aceitos como retorno de rede.
+Não há reenvio automático após erro, exceção ou timeout. Desabilitar poderes ou pausar impede nova confirmação, mas não desfaz um pedido já enviado. Se a página mudar com poder pendente, o autoplay fica bloqueado até conferir a partida e reiniciar o aplicativo; uma nova página não herda o latch JavaScript anterior.
 
-## Compilar e limites
+Exporte o relatório normal e procure `autoplay.powers`, `autoplay.planning`, `autoplay.reading` e `autoplay.events`. Somente contadores, tipos numéricos e motivos enumerados são exportados; IDs de cartas, sala, usuário e poderes ficam apenas em memória.
 
-ZIP `SDKtools_Fontes.zip` e workflow `compilar.yml` são um par por SHA-256/tamanho. Workflow Compilar SDKtools US, `base_source=release`, `release_tag=base-us-6.6.2`. Saída: `WePlay_US_6.6.2_SDKtools_v3_19_9_unsigned.ipa`. Requer assinatura.
+## Compilar
 
-O coletor foi preparado em Windows. Não há iPhone conectado nesta sessão. Testes com mocks e build iOS, quando aprovados, não comprovam aceitação real pelo servidor. Nenhuma tentativa real foi enviada por esta estação.
+`SDKtools_Fontes.zip` e `compilar.yml` formam um par por SHA-256 e tamanho. GitHub Actions **Compilar SDKtools US**, `base_source=release`, `release_tag=base-us-6.6.2`.
 
-A observação também fica vinculada ao start_time da rodada, à sala e à instância da conexão (valores somente em memória). Troca de rodada/sala/reconexão invalida a confirmação do slot, mesmo com IDs de carta reutilizados.
+Saída: `WePlay_US_6.6.2_SDKtools_v3_20_0_unsigned.ipa`. **Requer assinatura para instalar.**
+
+Os testes usam cenas/servidor simulados e capturas históricas. Compilação/linkagem Apple e integração no IPA são verificações separadas. Não há iPhone conectado nesta estação: velocidade, compatibilidade dos controles vivos e aceitação dos poderes ainda precisam de validação no aparelho. Não há garantia de vitória ou jogada perfeita.
