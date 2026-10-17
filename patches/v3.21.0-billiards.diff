@@ -160,7 +160,7 @@
 +}
 --- a/Analysis/V3_21_0-billiards-strategy.md
 +++ b/Analysis/V3_21_0-billiards-strategy.md
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,134 @@
 +# Bilhar 3.21.0 / build 47 — evidência, implementação e limites
 +
 +## Identidade e REA
@@ -248,6 +248,11 @@
 +7. Revalida dono do turno, gameId, roundId/turnCount, cena/câmera, started,
 +   canShot, controles habilitados, slider, perfil físico, bolas paradas e
 +   ausência do diálogo de efeito. Troca de partida/câmera, fim/rewind param.
++   Requer as16 identidades da mesa e nenhum slot inativo/não encaçapado ambíguo.
++   Um comando de armamento **somente de leitura** vincula a partida no instante
++   do clique, antes de qualquer decisão. Aim e Auto têm permissões distintas;
++   recarga/troca da VM não herda permissão. O lado nativo também vincula
++   sessão/cena/câmera/viewport e não rearma ao reencontrar outra mesa.
 +8. Calibração de lançamento: apenas um trecho reto de40–200ms por tacada,
 +   antes do primeiro contato possível; exige velocidade/direção/deslocamento
 +   coerentes, rejeita correções/teleports. EWMA limitada0.9–1.1; só influencia
@@ -3911,18 +3916,22 @@
  	<key>MinimumOSVersion</key>
 --- a/Resources/billiards_probe.lua
 +++ b/Resources/billiards_probe.lua
-@@ -1,4 +1,4 @@
+@@ -1,5 +1,6 @@
 --- SDKtools 3.19.2. Read-only Billiard observer. The host calls this chunk on the
+--- existing Lua state's owner/main thread with exactly "sample" or "stop".
 +-- SDKtools 3.21.0. Observer plus explicit opt-in shot strategy. The host calls this chunk on the
- -- existing Lua state's owner/main thread with exactly "sample" or "stop".
++-- existing Lua state's owner/main thread. Exact opt-ins: arm_aim/arm_auto;
++-- aim/autoplay require that live-VM lease. sample/stop remain read-only.
  -- Contracts: cache1084 CRes BiFrameLogic/BallBehavior/AuxiliaryLineBehavior.
  -- Never call updateAuxiliary: it changes rebound data consumed by game physics.
-@@ -408,15 +408,289 @@
+ local command = ...
+@@ -408,15 +409,297 @@
      end
  end
  
 +-- Invoked only by the two exact opt-in commands. sample/stop stay read-only.
-+local actionCommand=command=="aim" or command=="autoplay"
++local armingCommand=command=="arm_aim" or command=="arm_auto"
++local actionCommand=command=="aim" or command=="autoplay" or armingCommand
 +local control
 +if actionCommand then
 + control=rawget(state,"control321")
@@ -4065,13 +4074,14 @@
 +   local id=instance(col);local record
 +   for _,b in ipairs(rows) do if b.active and instance(get(get(frame,"balls")[b.tag],"collider"))==id then record=b;break end end
 +   local kind=record and (record.tag==ignore and "ignore" or "ball") or "unknown"
++   local pocketName
 +   local p=get(col,"transform")
 +   for _=1,8 do
 +    if not p then break end
 +    local go=get(p,"gameObject");if get(get(go,"scene"),"handle")~=sceneHandle then return nil end
 +    local name,tag=get(go,"name"),get(go,"tag")
 +    if not record then
-+     if names[name] and get(col,"isTrigger")==true then kind="pocket"
++     if names[name] and get(col,"isTrigger")==true then kind="pocket";pocketName=name
 +     elseif name=="bumpers" or tag=="bumper" then kind="cushion"
 +     elseif name=="canvas" then kind=includeSurface and "surface" or "ignore" end
 +    end
@@ -4079,7 +4089,7 @@
 +   end
 +   if kind~="ignore" then
 +    if not first or distance<first.distance-.00001 then
-+     first={kind=kind,tag=record and record.tag,distance=distance,normal=vector(get(hit,"normal")),material=get(col,"sharedMaterial")}
++     first={kind=kind,tag=record and record.tag,distance=distance,normal=vector(get(hit,"normal")),material=get(col,"sharedMaterial"),pocket=pocketName}
 +    elseif math.abs(distance-first.distance)<.00001 and (kind~=first.kind or (record and record.tag~=first.tag)) then return nil end
 +   end
 +  end
@@ -4171,13 +4181,14 @@
 +  if valid and plan.pocket~=0 then
 +   hit=nearest(plan.objectStart,plan.objectDirection,plan.target)
 +   valid=hit and hit.kind==(plan.bank and "cushion" or "pocket")
++   if valid and not plan.bank then valid=hit.pocket==plan.pocketWorld.name end
 +   if valid and plan.bank then valid=validMaterial(hit.material,.5,.8,0) end
 +   if valid and plan.bank then
 +    local n=unit(hit.normal);local expected=unit(subtract(plan.pocketWorld,plan.bank))
 +    local rebound=n and unit(subtract(plan.objectDirection,add(zero(),n,2*dot(plan.objectDirection,n))))
 +    local actual=add(plan.objectStart,plan.objectDirection,hit.distance)
 +    valid=n and expected and rebound and dot(expected,rebound)>.999 and length(subtract(actual,plan.bank))<.06
-+    if valid then local start=add(actual,n,.003);hit=nearest(start,rebound,plan.target);valid=hit and hit.kind=="pocket" end
++    if valid then local start=add(actual,n,.003);hit=nearest(start,rebound,plan.target);valid=hit and hit.kind=="pocket" and hit.pocket==plan.pocketWorld.name end
 +   end
 +  end
 +  if valid then selected=plan;break end
@@ -4198,6 +4209,7 @@
      if command == "stop" then
          state.session = state.session + 1
 +        state.control321 = nil -- Explicit user disarm. lastAttempt survives.
++        state.controlMode321 = nil -- A new/reloaded Lua VM cannot inherit consent.
          state.frameRef[1] = nil
          state.sceneName, state.sceneHandle, state.cameraID = nil, nil, nil
          result.sessionId = state.session
@@ -4205,20 +4217,31 @@
      end
 -    if command ~= "sample" then return stop("unsupported", "unknown_command") end
 +    if command ~= "sample" and not actionCommand then return stop("unsupported", "unknown_command") end
++    if actionCommand and not armingCommand and state.controlMode321~=command then
++        controlStatus("uncertain","explicit_arm_required")
++        return stop("unsupported","explicit_arm_required")
++    end
  
      local CS = rawget(_G, "CS")
      local engine = get(CS, "UnityEngine")
-@@ -755,6 +1029,9 @@
+@@ -755,6 +1038,16 @@
      end
      diagnostics.reason=physicsReason or "ready"
      diagnostics.available=physicsReason==nil
 +    if actionCommand and not controlObserve(frame,engine,sceneHandle,cameraID,white,result.balls,diagnostics,moving or angularMoving) then
 +        return result
 +    end
++    if armingCommand then
++        -- This read-only arm binds frame, gameId, turn and camera NOW, rather
++        -- than letting the first later action silently bind a different match.
++        state.controlMode321=command=="arm_auto" and "autoplay" or "aim"
++        controlStatus("waiting","automation_armed")
++        return result
++    end
      if moving or angularMoving then return stop("moving", "balls_moving") end
      if not tutorial and (get(frame,"started")~=true or get(frame,"canShot")~=true) then
          return stop("not_ready", "not_aiming")
-@@ -794,6 +1071,9 @@
+@@ -794,6 +1087,9 @@
      end
      result.cue = {world=white.position, direction=direction}
      result.status="aiming"
@@ -4228,7 +4251,7 @@
  
      local physics=get(engine,"Physics")
      local sphereCastAll=get(physics,"SphereCastAll")
-@@ -1400,7 +1680,10 @@
+@@ -1400,7 +1696,10 @@
      return result
  end
  local ok, value = pcall(sample)
@@ -4425,24 +4448,25 @@
   * Synchronous and main-thread-only. Does not create a LuaManager/LuaEnv, force
   * class initialization, attach threads, resolve fixed offsets or call getters.
 - * Only the exact commands `sample` and `stop` are accepted.
-+ * Only `sample`, `stop`, `aim`, `autoplay` are accepted. Actions require explicit
++ * Only `sample`, `stop`, `arm_aim`, `arm_auto`, `aim`, `autoplay` are accepted. Actions require explicit
 + * native opt-in and revalidate the current local turn in the existing VM.
   */
  @interface STBilliardsLuaBridge : NSObject
  + (nullable NSDictionary *)executeCommand:(NSString *)command
 --- a/Sources/SDKtools/STBilliardsLuaBridge.m
 +++ b/Sources/SDKtools/STBilliardsLuaBridge.m
-@@ -240,7 +240,8 @@
+@@ -240,7 +240,9 @@
  @implementation STBilliardsLuaBridge
  + (NSDictionary *)executeCommand:(NSString *)command error:(NSError **)error {
      if (error) *error = nil;
 -    if (![command isEqualToString:@"sample"] && ![command isEqualToString:@"stop"]) {
 +    if (![command isEqualToString:@"sample"] && ![command isEqualToString:@"stop"] &&
-+        ![command isEqualToString:@"aim"] && ![command isEqualToString:@"autoplay"]) {
++        ![command isEqualToString:@"aim"] && ![command isEqualToString:@"autoplay"] &&
++        ![command isEqualToString:@"arm_aim"] && ![command isEqualToString:@"arm_auto"]) {
          if (error) *error = STLuaError(STLuaUnsupportedCommand);
          return nil;
      }
-@@ -281,6 +282,22 @@
+@@ -281,6 +283,22 @@
          }
          NSData *script = [NSData dataWithContentsOfURL:scriptURL options:0 error:NULL];
          if (!script.length || script.length > STLuaScriptLimit) { failure = STLuaScriptUnavailable; break; }
@@ -4465,7 +4489,7 @@
          const struct mach_header *unityHeader = NULL;
          const char *unityPath = NULL;
          for (uint32_t i = 0, count = _dyld_image_count(); i < count; ++i) {
-@@ -381,8 +398,8 @@
+@@ -381,8 +399,8 @@
          if (!api.lua_checkstack(state, 8)) { failure = STLuaStackUnavailable; break; }
          STBilliardsLuaExecution execution = {
              .api = &api, .script = script.bytes, .scriptLength = script.length,
@@ -4509,11 +4533,12 @@
  /// Main-thread use only. No collection runs before the user starts it.
 --- a/Sources/SDKtools/STBilliardsRuntime.m
 +++ b/Sources/SDKtools/STBilliardsRuntime.m
-@@ -234,6 +234,13 @@
+@@ -234,6 +234,14 @@
  @property(nonatomic) double startedAt;
  @property(nonatomic) double lastTick;
  @property(nonatomic) BOOL slowed;
 +@property(nonatomic) uint64_t automationFrame;
++@property(nonatomic,copy) NSDictionary *automationContext;
 +@property(nonatomic) BOOL automationEverEnabled;
 +@property(nonatomic) BOOL automationEverAutoplay;
 +@property(nonatomic,strong) NSMutableArray<NSDictionary *> *automationHistory;
@@ -4523,7 +4548,7 @@
  @property(nonatomic,copy) NSString *stopReason;
  - (void)closeShotObservationWithReason:(NSString *)reason;
  - (void)updateShotObservationWithRecord:(NSDictionary *)record;
-@@ -243,6 +250,7 @@
+@@ -243,6 +251,7 @@
  + (instancetype)shared { static STBilliardsRuntime *instance; static dispatch_once_t once; dispatch_once(&once,^{instance=[self new];}); return instance; }
  - (instancetype)init {
      if ((self=[super init])) {
@@ -4531,7 +4556,7 @@
          _statusText=@"Desativado"; _lastSnapshot=@{}; _history=[NSMutableArray array]; _stopReason=@"not_started";
          [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(background:) name:UIApplicationWillResignActiveNotification object:nil];
          [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(background:) name:UIApplicationDidEnterBackgroundNotification object:nil];
-@@ -254,6 +262,78 @@
+@@ -254,6 +263,96 @@
      self.statusText=text;
      [[NSNotificationCenter defaultCenter] postNotificationName:STBilliardsRuntimeDidChangeNotification object:self];
  }
@@ -4545,6 +4570,20 @@
 +    self.automationEverEnabled|=mode!=0;
 +    self.automationEverAutoplay|=mode==2;
 +    [STBilliardsLuaBridge executeCommand:@"stop" error:nil];
++    self.automationContext=nil;
++    if (mode) {
++        NSDictionary *arm=[STBilliardsLuaBridge executeCommand:mode==2?@"arm_auto":@"arm_aim" error:nil];
++        NSDictionary *a=[arm[@"automation"] isKindOfClass:NSDictionary.class]?arm[@"automation"]:nil;
++        if (![a[@"reason"] isEqual:@"automation_armed"] || ![arm[@"scene"][@"name"] isEqual:@"BilliardInGame"]) {
++            _automationMode=0;
++            self.automationHUD.hidden=YES;
++            [STBilliardsLuaBridge executeCommand:@"stop" error:nil];
++            [self publishStatus:@"Abra a partida atual antes de armar Aim/Auto"]; return;
++        }
++        self.automationContext=@{@"scene":arm[@"scene"] ?: @{},@"sessionId":arm[@"sessionId"] ?: @(-1),
++            @"cameraInstanceId":arm[@"cameraInstanceId"] ?: @0,@"screen":arm[@"screen"] ?: @{}};
++        self.automationFrame=[arm[@"frameNumber"] unsignedLongLongValue];
++    }
 +    self.automationHUD.hidden=mode==0;
 +    [self publishStatus:mode==2?@"Auto · somente a partida atual":(mode==1?@"Aim · ajusta sem disparar":@"Automação pausada")];
 +}
@@ -4555,6 +4594,10 @@
 +}
 +- (void)runAutomationForSnapshot:(NSDictionary *)snapshot {
 +    if (!self.automationMode) return;
++    if (!self.automationContext || !STBLShotSameContext(self.automationContext,snapshot) ||
++        ![self.automationContext[@"screen"] isEqual:snapshot[@"screen"]]) {
++        [self pauseAutomationWithReason:@"armed_context_changed"]; return;
++    }
 +    double frame=0,width=0,height=0;
 +    if (!STBLShotFiniteNumber(snapshot[@"frameNumber"],&frame) || frame<0 || floor(frame)!=frame ||
 +        !STBLShotFiniteNumber(snapshot[@"screen"][@"width"],&width) ||
@@ -4610,7 +4653,7 @@
  - (void)background:(NSNotification *)notification {
      (void)notification;
      if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{[self stopWithReason:@"background"];}); return; }
-@@ -273,6 +353,14 @@
+@@ -273,6 +372,14 @@
      self.overlayWindow=window; self.hostWindow=nil; self.hostView=nil;
      self.drawing=[[STBilliardsOverlayView alloc] initWithFrame:window.rootViewController.view.bounds];
      [window.rootViewController.view insertSubview:self.drawing atIndex:0];
@@ -4625,7 +4668,7 @@
      self.enabled=YES; self.slowed=NO; self.startedAt=CACurrentMediaTime(); self.lastTick=0;
      self.attempts=0; self.accepted=0; self.rejected=0; self.slowSamples=0; self.omitted=0;
      self.lastSnapshot=@{}; self.latestAimReference=nil; self.lastAimBeforeMotion=nil; self.lastShotObservation=nil;
-@@ -304,6 +392,7 @@
+@@ -304,6 +411,7 @@
  - (void)stopWithReason:(NSString *)reason {
      if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{[self stopWithReason:reason];}); return; }
      BOOL wasEnabled=self.enabled;
@@ -4633,7 +4676,7 @@
      self.enabled=NO; [self.sampleTimer invalidate]; self.sampleTimer=nil;
      [self.expiryDisplayLink invalidate]; self.expiryDisplayLink=nil;
      [self.drawing clear]; [self.drawing removeFromSuperview]; self.drawing=nil;
-@@ -472,6 +561,7 @@
+@@ -472,6 +580,7 @@
      NSDictionary *snapshot=STBilliardsSanitizeSnapshot(raw,&failure);
      if (!snapshot) { [self invalidate:@"error" reason:failure]; [self publishStatus:@"Dados incompletos; guia ocultada. Exporte o diagnóstico."]; return; }
      self.lastSnapshot=snapshot;
@@ -4641,7 +4684,7 @@
      NSString *status=snapshot[@"status"];
      if (![@[@"aiming",@"moving"] containsObject:status]) {
          [self.drawing clear]; _frameGate=(STBLFrameGate){0};
-@@ -524,16 +614,17 @@
+@@ -524,16 +633,17 @@
      self.drawing.snapshot=snapshot; self.drawing.gameRect=rect; self.drawing.acceptedBounds=self.drawing.bounds;
      self.drawing.expiresAt=_frameGate.advancedAt+STBL_STALE_SECONDS;
      [self.drawing setNeedsDisplay];
@@ -4661,7 +4704,7 @@
          @"samples":[self.history copy],@"counts":@{@"attempts":@(self.attempts),@"accepted":@(self.accepted),@"rejected":@(self.rejected),
              @"slowSamples":@(self.slowSamples),@"omittedOlderSamples":@(self.omitted)},@"stopReason":self.stopReason,
          @"limits":@{@"historySamples":@(STBLHistoryLimit),@"staleSeconds":@(STBL_STALE_SECONDS),@"maximumHz":@10,@"slowModeHz":@4,
-@@ -546,7 +637,7 @@
+@@ -546,7 +656,7 @@
              @"moduleLoadingCalls":@NO,@"globalNamespaceWrites":@NO,
              @"loadedBilliardsSceneRequired":@YES,@"existingManagerGetter":@YES,
              @"managerGetterImplementation":@"not_recovered"},
@@ -4813,7 +4856,7 @@
 + }}
 --- a/Tests/test_billiards_strategy.lua
 +++ b/Tests/test_billiards_strategy.lua
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,223 @@
 +local strategyPath,probePath,fixturePath,geometryPath=...
 +assert(_VERSION=="Lua 5.3")
 +local function read(p) local f=assert(io.open(p,"rb"));local s=f:read("*a");f:close();return s end
@@ -4927,6 +4970,9 @@
 + return probe(command)
 +end
 +local function is(s,phase) return s:find('"phase":"'..phase..'"',1,true)~=nil end
++local denied=tick("autoplay")
++check(is(denied,"uncertain") and shots==0,"no actions before explicit arm")
++tick("stop");tick("arm_aim");
 +tick("aim");local a=tick("aim")
 +check(is(a,"aimed"),"aim reaches original input controls: "..a)
 +local bounds=__SDKtoolsBilliards315.control321.prepared.physics.bounds
@@ -4937,7 +4983,9 @@
 +frame.balls[3].poted=false;a=tick("aim")
 +check(a:find('table_ball_state_unresolved',1,true) and shots==0,"inactive unpotted ball cannot count as cleared")
 +frame.balls[3].poted=true
-+tick("stop");tick("autoplay");a=tick("autoplay")
++a=tick("autoplay")
++check(a:find('explicit_arm_required',1,true) and shots==0,"Aim permission cannot authorize an automatic release")
++tick("stop");tick("arm_auto");tick("autoplay");a=tick("autoplay")
 +check(is(a,"aimed"),"auto prepares")
 +a=tick("autoplay",.4);check(is(a,"submitted") and shots==1,"single original release")
 +for _=1,6 do tick("autoplay") end
@@ -4945,10 +4993,10 @@
 +frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0)
 +for _=1,8 do tick("autoplay") end
 +check(shots==1,"same round cannot release again")
-+tick("stop");tick("autoplay");tick("autoplay");tick("autoplay",.4)
++tick("stop");tick("arm_auto");tick("autoplay");tick("autoplay");tick("autoplay",.4)
 +check(shots==1,"stop/start cannot erase submitted-turn latch")
 +frame.roundId=2;frame.frameStateLogic.turnData.turnCount=2
-+tick("stop");frame.isServer=false;frame.frameStateLogic.turnData.myTurn=false
++tick("stop");tick("arm_auto");frame.isServer=false;frame.frameStateLogic.turnData.myTurn=false
 +for _=1,4 do tick("autoplay") end
 +check(shots==1,"other player's turn: zero shots")
 +frame.isServer=true;frame.frameStateLogic.turnData.myTurn=true;modal=true
@@ -4957,31 +5005,32 @@
 +modal=false;frame.gameView.powerSld.touchable=false
 +for _=1,4 do tick("autoplay") end
 +check(shots==1,"disabled slider: zero shots")
-+frame.gameView.powerSld.touchable=true;tick("stop")
++frame.gameView.powerSld.touchable=true;tick("stop");tick("arm_auto")
 +frame.gameView.onPowerRelease=function() shots=shots+1;error("uncertain original release") end
 +tick("autoplay");tick("autoplay");a=tick("autoplay",.4)
 +check(shots==2 and is(a,"uncertain"),"release exception latches uncertainty")
 +for _=1,5 do tick("autoplay") end
 +check(shots==2,"exception not retried")
-+tick("stop");tick("autoplay");tick("autoplay");tick("autoplay",.4)
++tick("stop");tick("arm_auto");tick("autoplay");tick("autoplay");tick("autoplay",.4)
 +check(shots==2,"exception latch survives re-arm")
-+frame.roundId=3;frame.frameStateLogic.turnData.turnCount=3;tick("stop");tick("autoplay")
++frame.roundId=3;frame.frameStateLogic.turnData.turnCount=3;tick("stop");tick("arm_auto");tick("autoplay")
 +frame.frameStateLogic.frameState=10;frame.started=false;a=tick("autoplay")
 +check(is(a,"ended"),"game over is terminal")
 +frame.started=true;frame.frameStateLogic.frameState=7;frame.roundId=0;frame.frameStateLogic.turnData.turnCount=0
 +for _=1,5 do tick("autoplay") end
 +check(shots==2,"new match cannot auto-rearm")
-+tick("stop");tick("autoplay");camera.GetInstanceID=function() return 999 end;a=tick("autoplay")
++tick("stop");tick("arm_auto");tick("autoplay");camera.GetInstanceID=function() return 999 end;a=tick("autoplay")
 +check(is(a,"ended"),"camera/scene context changes terminate action")
 +camera.GetInstanceID=function() return 501 end
 +tick("stop");frame.gameDataLogic.gameId="1235";frame.roundId=1;frame.frameStateLogic.turnData.turnCount=1
 +frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0)
 +white.transform.position=v(0,0,0)
++tick("arm_auto")
 +tick("autoplay");frame.gameDataLogic.gameId="1236";a=tick("autoplay")
 +check(is(a,"ended") and a:find('match_changed',1,true),"in-place game info reuse cannot start another match")
-+tick("stop");frame.gameDataLogic.gameId=nil;a=tick("autoplay")
++tick("stop");tick("arm_auto");frame.gameDataLogic.gameId=nil;a=tick("autoplay")
 +check(a:find('match_identity_unavailable',1,true) and shots==2,"unknown match identity cannot act")
-+frame.gameDataLogic.gameId="1237";tick("stop")
++frame.gameDataLogic.gameId="1237";tick("stop");tick("arm_auto")
 +-- Calibrate three distinct, measured short flights. Supply the actual numeric
 +-- travel AND velocity; a network teleport or zero-displacement velocity is not
 +-- allowed to count as calibration.
@@ -5006,19 +5055,22 @@
 +check(shots==5,"three rounds, exactly three releases")
 +tick("stop");frame.gameDataLogic.gameId="1239";frame.roundId=1;frame.frameStateLogic.turnData.turnCount=1
 +frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0);white.transform.position=v(0,0,0)
-+surface.sharedMaterial.dynamicFriction=.5;tick("autoplay");a=tick("autoplay")
++tick("arm_auto");surface.sharedMaterial.dynamicFriction=.5;tick("autoplay");a=tick("autoplay")
 +check(a:find('live_table_material_mismatch',1,true) and shots==5,"unexpected live floor friction blocks auto")
 +surface.sharedMaterial.dynamicFriction=1
 +-- Changing the live route after aim must not release a cached solution.
 +tick("stop");frame.gameDataLogic.gameId="1238";frame.roundId=1;frame.frameStateLogic.turnData.turnCount=1
 +frame.ballsInMovement=false;frame.canShot=true;white.rigidbody.velocity=v(0,0,0);white.transform.position=v(0,0,0)
-+tick("autoplay");tick("autoplay")
++tick("arm_auto");tick("autoplay");tick("autoplay")
 +CS.UnityEngine.Physics.SphereCastAll=function(origin,radius,dir)
 + if dir.y==-1 then return hits({hit(surface,.5,v(0,1,0))}) end
 + return hits({hit(unknown,.1)})
 +end
 +a=tick("autoplay",.4)
 +check(is(a,"uncertain") and shots==5,"fresh route validation rejects new obstruction")
++__SDKtoolsBilliards315.controlMode321=nil
++a=tick("autoplay")
++check(is(a,"uncertain") and shots==5,"lost VM permission cannot silently rearm")
 +return checks
 +]=]
 +-- Prefix declares local caseName/probePath from varargs; append a separate arg.
@@ -5099,7 +5151,7 @@
 +    "pythonPassed": 91,
 +    "pythonSkipped": 4,
 +    "observerLua53Passed": 68,
-+    "strategyLua53Checks": 111,
++    "strategyLua53Checks": 114,
 +    "failures": 0
 +  },
 +  "limits": {
@@ -5237,7 +5289,7 @@
 +    "Analysis/V3_20_0-README-preservado.md": "5d735c82a961addbfa18b5cc26d221b884689f0719967c9b4841930b26e18e22",
 +    "Analysis/V3_20_0-alpaca-turbo.md": "4cbe077a87a369e539aa3a7016ef9a6e196cb39b82c11ade60776bf812cb1c05",
 +    "Analysis/V3_21_0-REA-summary.json": "d53555cc0cf1a780748daeaf93ee4fa0523083622ff4b8ca201e979f0dede7be",
-+    "Analysis/V3_21_0-billiards-strategy.md": "9922873485df68e0ec5e96ecc035eb22e6d747fe1c992b1fc85cf9f0ec3f96dc",
++    "Analysis/V3_21_0-billiards-strategy.md": "fc0e5be758c49ab4d18ae96e11329fa75f7e2d67bab6fd75af52d00e76b3cda7",
 +    "Analysis/V3_21_0-binary-scene-geometry.json": "992624f6d7f48575ecf5def0bdeb8a7577e4bf4ffd0181a8cbb51add869ae5b2",
 +    "Analysis/V3_21_0-read-scene-geometry.py": "01e13383f6f6ffac25508e089ab3d34f19972d252f8597cbd9b1fb4973f2c8db",
 +    "Analysis/V3_21_0-source-ledger.json": "f541ee7fd8b731648ab0fea55d2a30d4c26edf086c8a11bf63a0c8604f634591",
@@ -5275,7 +5327,7 @@
 +    "Resources/autoplay_planner.js": "77c88457ad9efe6373ce550482b95c1a896c61651291abba52d4325ecc1e8e51",
 +    "Resources/autoplay_powers.js": "e16ef77e23e1f8f3298002a407c942797b7d23ef0ed626851f38732e4f5c180a",
 +    "Resources/autoplay_tool.js": "84679619e46e074f1d18b8c1de946ab170d5cd3a4a6659c040d48f9c40591e18",
-+    "Resources/billiards_probe.lua": "766ca7fa5c652b201ebfabd73c029f34ef92770fb1a14d994edb57cd2dae1017",
++    "Resources/billiards_probe.lua": "9ceac96097a52a266d607c4cfd7c99027b24a2723a29c15e27dca47a6353b8b1",
 +    "Resources/billiards_strategy.lua": "381935605c60d907c82ef3c6863cdf00127f5b00e6a77d74fbfe1d7d4510f0c7",
 +    "Resources/card_early.js": "19efa975e9f0e3805bea877af51d1f20b39868c26c335d4a08faf7927e89b9ed",
 +    "Resources/card_flow.js": "3f24a6994961bd75ef940b8e36ec64d41dcfff0a028c71e01b9c5b4fcd7aa973",
@@ -5300,14 +5352,14 @@
 +    "Sources/SDKtools/STBilliardsLivePolicy.h": "16fc9df1291f0a8eb8b59bba6bbe704b200a51753af109ae63e423714eedceae",
 +    "Sources/SDKtools/STBilliardsLiveSnapshot.h": "a3da431e8b1272ec3902c7887acb75ba90737f64921a8bf1f319743a1a8bb0c4",
 +    "Sources/SDKtools/STBilliardsLiveSnapshot.m": "c41cb6deac208672c20a56616a37d2c769db22dda5c35ca48ed26566d3c51311",
-+    "Sources/SDKtools/STBilliardsLuaBridge.h": "eebeb24e7cd19a25c1ee483a985fdf09573112eb6bf1954ab902a7c2d2e0866f",
-+    "Sources/SDKtools/STBilliardsLuaBridge.m": "b308e7a86470adad292f4c22637a5ccd4134d3163978e35624afcc7e7d8f79b6",
++    "Sources/SDKtools/STBilliardsLuaBridge.h": "8eac6837980ef61172ee429ecf7888a320742cf450ac68a4cc846f14d9ac3397",
++    "Sources/SDKtools/STBilliardsLuaBridge.m": "a652134f55a17e6566c5477ec1dfe2ef1599af5d67e794e9fda03e41a1df4034",
 +    "Sources/SDKtools/STBilliardsNumericPolicy.h": "0d8aa504ecee5f3019d8e518375ef7117d9a72c9b1e2951ff34713ad41578420",
 +    "Sources/SDKtools/STBilliardsResourceExporter.h": "407187bc91101ea607248262af0ac2b829dc59fc5762a851f816761aef937c0e",
 +    "Sources/SDKtools/STBilliardsResourceExporter.m": "939f4420d769419d2f1e00f667e7b1d956a8e6bccb73b24a7784a4774bba2f52",
 +    "Sources/SDKtools/STBilliardsResourceIO.h": "26757fc4ccdb39383ab11d25abeab3c59b645b0c3195278c8330487ad8db5e6c",
 +    "Sources/SDKtools/STBilliardsRuntime.h": "280f39a709b47c39e13eb3ee0f975cd1998fe4508b5af46226334d28eb60a7e7",
-+    "Sources/SDKtools/STBilliardsRuntime.m": "92ba7a2bbf525fbc882ade87702a1a2d6d67daecc50d2d8796e8cdf0288664c1",
++    "Sources/SDKtools/STBilliardsRuntime.m": "6c5d5272a59ff7b09021383d8827005cd4883bc756eb546d856a8ff830def2e1",
 +    "Sources/SDKtools/STCardColorFeed.h": "889d6e9034a2bbe658c5619542953a5fc7be990516620424f3028e9c86fcc0ca",
 +    "Sources/SDKtools/STCardColorFeed.m": "e7f48ae6ec3e5d2b0233689b1d8917d0a6a95b336c7ac0a9ef9d3c2f7b8f8b68",
 +    "Sources/SDKtools/STCardEarlyCapture.h": "dcbf24e2c4c4dab6f0e086fa0dc5378450dc7fab240e42864c3237286b86e4ee",
@@ -5407,7 +5459,7 @@
 +    "Tests/scene_probe.test.cjs": "90bd393c9526a1b2db2f189295cf6a606e9713ff916f3975b47ef2c544405742",
 +    "Tests/test_billiards_probe.lua": "381c0e4dfa803eeca40a7d938b8e5b87269476251c3b9308b2fac1c3bda3d3ab",
 +    "Tests/test_billiards_resource_io.c": "de77093ce1109160478c4624082b3d581a4c8db0694614df57fd67dccfb3036d",
-+    "Tests/test_billiards_strategy.lua": "30366524e3a6e6477933157d3659d1027977de0fb883b321870e4fe5fd1a9e78",
++    "Tests/test_billiards_strategy.lua": "a861b5f7190ee8df4edf7f4be2ab1b79f76cebd07a1db30999c43252e3352a46",
 +    "Tests/test_capture_codec.py": "2920f1e5362a6d4a11a4136d9a81c918dc99e35787b91ae8d5133fd55106e8d7",
 +    "Tests/test_card_activation_policy.py": "d3f6d924a0c9ef72b61d23fa185924ab09b204f2df970d14484411c3d07ead56",
 +    "Tests/test_card_disabled_build.py": "427b4a134762c4bb0f6651d64541cfdc435ea58bfd8296bd5c9339206d599d87",
