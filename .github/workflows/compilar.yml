@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Validar e extrair o par de fontes V4.0.0
+      - name: Validar e extrair o par de fontes V4.0.13
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -67,10 +67,10 @@ jobs:
           import zipfile
 
           archive = Path("SDKtools_Fontes.zip")
-          expected_size = int("3397450")
-          expected_sha = "f709a70730aa0848e56193eebfa751ec43ff984b20ab0442b1cb7be5d3b03529"
+          expected_size = int("3883321")
+          expected_sha = "40bdac87a27426d827516c6c7df0f4dafec9125f8f7c6c9fa838101490bec6da"
           destination = Path("_sdktools_build")
-          manifest_name = "SDKtools/Validation/V4_0_0-validation.json"
+          manifest_name = "SDKtools/Validation/V4_0_13-validation.json"
           max_entries = 1024
           max_file = 4 * 1024 * 1024
           max_total = 32 * 1024 * 1024
@@ -110,14 +110,14 @@ jobs:
               actual_size = archive.stat().st_size
               require(actual_size == expected_size,
                       f"Tamanho incorreto de {archive.name}: esperado {expected_size} bytes; recebido {actual_size} bytes. "
-                      "Substitua SDKtools_Fontes.zip e .github/workflows/compilar.yml pelo mesmo par V4.0.0, "
+                      "Substitua SDKtools_Fontes.zip e .github/workflows/compilar.yml pelo mesmo par V4.0.13, "
                       "salve no mesmo commit e inicie uma NOVA execução em Run workflow na branch atualizada.")
               require(0 < expected_size <= 8 * 1024 * 1024, "Limite do ZIP de fontes excedido.")
               require(re.fullmatch(r"[0-9a-f]{64}", expected_sha) is not None, "SHA-256 esperado inválido.")
               zipped = archive.read_bytes()
               actual_sha = hashlib.sha256(zipped).hexdigest()
               require(len(zipped) == expected_size and actual_sha == expected_sha,
-                      f"ZIP de fontes não corresponde ao workflow V4.0.0. SHA-256 esperado: {expected_sha}; recebido: {actual_sha}. "
+                      f"ZIP de fontes não corresponde ao workflow V4.0.13. SHA-256 esperado: {expected_sha}; recebido: {actual_sha}. "
                       "Use o ZIP original sem recompactar e atualize ambos os arquivos no mesmo commit.")
               require(not destination.exists() and not destination.is_symlink(), "Pasta de saída já existe.")
               members = {}
@@ -165,9 +165,9 @@ jobs:
                           require(prior == prefix, "Colisão de maiúsculas entre pastas do ZIP.")
                           if end < len(parts):
                               require(prefix not in members or members[prefix], "Arquivo usado como pasta no ZIP.")
-              require(manifest_name in payloads, "Manifesto V4.0.0 ausente.")
+              require(manifest_name in payloads, "Manifesto V4.0.13 ausente.")
               manifest = json.loads(payloads[manifest_name].decode("utf-8"), object_pairs_hook=no_duplicate_keys)
-              require(isinstance(manifest, dict) and manifest.get("toolVersion") == "4.0.0" and manifest.get("frameworkBuild") == "75", "Versão incorreta do manifesto.")
+              require(isinstance(manifest, dict) and manifest.get("toolVersion") == "4.0.13" and manifest.get("frameworkBuild") == "88", "Versão incorreta do manifesto.")
               hashes = manifest.get("sourceSHA256")
               require(isinstance(hashes, dict) and hashes, "Mapa sourceSHA256 ausente.")
               expected_members = set()
@@ -192,7 +192,7 @@ jobs:
               require(not destination.exists() and not destination.is_symlink(), "Pasta de saída surgiu durante preflight.")
               temporary.rename(destination)
               temporary = None
-              print("V4.0.0: ZIP, caminhos, CRC e %d hashes de fontes verificados." % len(hashes))
+              print("V4.0.13: ZIP, caminhos, CRC e %d hashes de fontes verificados." % len(hashes))
           except (ValueError, OSError, UnicodeError, zipfile.BadZipFile, RuntimeError) as error:
               raise SystemExit("Preflight bloqueado: " + str(error))
           finally:
@@ -257,18 +257,18 @@ jobs:
         working-directory: _sdktools_build/SDKtools
         run: |
           set -euo pipefail
-          python3 scripts/integrate_ipa.py --ipa ../../_sdktools_input/base.ipa --framework dist/SDKtools.framework --output dist/WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa 2>&1 | tee sdktools-integration.log
+          python3 scripts/integrate_ipa.py --ipa ../../_sdktools_input/base.ipa --framework dist/SDKtools.framework --output dist/WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa 2>&1 | tee sdktools-integration.log
           cd dist
-          shasum -a 256 WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa > WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa.sha256
+          shasum -a 256 WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa > WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa.sha256
 
       - name: Guardar IPA sem assinatura
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v4.0.0-US-IPA
+          name: SDKtools-v4.0.13-US-IPA
           path: |
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.manifest.json
-            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa.sha256
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.manifest.json
+            _sdktools_build/SDKtools/dist/WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa.sha256
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
@@ -277,11 +277,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: SDKtools-v4.0.0-US-Diagnostico
+          name: SDKtools-v4.0.13-US-Diagnostico
           path: |
             _sdktools_build/SDKtools/sdktools-build.log
             _sdktools_build/SDKtools/sdktools-integration.log
-            _sdktools_build/SDKtools/Validation/V4_0_0-validation.json
+            _sdktools_build/SDKtools/Validation/V4_0_13-validation.json
             _sdktools_build/SDKtools/dist/SDKtools_unsigned.framework.zip
             _sdktools_build/SDKtools/dist/SDKtools.framework.dSYM.zip
           compression-level: 0
@@ -303,7 +303,7 @@ jobs:
       - name: Receber somente o artefato desta execução
         uses: actions/download-artifact@v8
         with:
-          name: SDKtools-v4.0.0-US-IPA
+          name: SDKtools-v4.0.13-US-IPA
           path: _sdktools_publish
           digest-mismatch: error
 
@@ -322,7 +322,7 @@ jobs:
           from pathlib import Path
           import re
 
-          ipa = Path('WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa')
+          ipa = Path('WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa')
           manifest = ipa.with_suffix('.manifest.json')
           checksum = Path(ipa.name + '.sha256')
           for path in (ipa, manifest, checksum):
@@ -350,7 +350,7 @@ jobs:
               raise SystemExit('Identificação da execução de origem inválida.')
           repo = os.environ['GITHUB_REPOSITORY']
           notes = (
-              'IPA sem assinatura do SDKtools V4.0.0 US. Requer assinatura para instalar.\n\n'
+              'IPA sem assinatura do SDKtools V4.0.13 US. Requer assinatura para instalar.\n\n'
               f'Origem: https://github.com/{repo}/actions/runs/{source_run}\n\n'
               f'Commit da compilação: `{source_sha}`\n\n'
               f'SHA-256 do IPA: `{sha256}`\n\n'
@@ -360,14 +360,14 @@ jobs:
           Path('release-notes.md').write_text(notes, encoding='utf-8')
           print('IPA, manifesto e checksum conferidos antes da publicação.')
           PY
-          ipa='WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.ipa'
-          manifest='WePlay_US_6.6.2_SDKtools_v4_0_0_unsigned.manifest.json'
-          tag="sdktools-v4.0.0-us-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ipa='WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.ipa'
+          manifest='WePlay_US_6.6.2_SDKtools_v4_0_13_unsigned.manifest.json'
+          tag="sdktools-v4.0.13-us-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           # O CLI envia os anexos antes de publicar. Não substitui releases anteriores.
           gh release create "$tag" "$ipa" "$manifest" "$ipa.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SDKTOOLS_SOURCE_SHA" \
-            --title "SDKtools V4.0.0 US - execução ${SDKTOOLS_SOURCE_RUN}" \
+            --title "SDKtools V4.0.13 US - execução ${SDKTOOLS_SOURCE_RUN}" \
             --notes-file release-notes.md \
             --latest=false
           printf '## Download do IPA\n\n[Baixar o IPA](https://github.com/%s/releases/download/%s/%s)\n\n[Ver a Release](https://github.com/%s/releases/tag/%s)\n' \
